@@ -71,6 +71,7 @@ extra_vars=()
 ansible-galaxy collection install community.general
 ansible-pull -U "$INSTALLER_REPO" -i "localhost," site.yml "${extra_vars[@]}"
 ```
+
 ## Watch the build progress
 
 SSH into your droplet and run the command:
