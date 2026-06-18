@@ -12,6 +12,17 @@
     version: "{{ rivendell_git_ref }}"
     accept_hostkey: true
 
+- name: Vendor the docbook titlepage template (not tracked in git, but docs/stylesheets/Makefile.am requires it unconditionally even with --disable-docs)
+  ansible.builtin.copy:
+    src: "/usr/share/xml/docbook/stylesheet/docbook-xsl-ns/template/{{ item }}"
+    dest: "{{ rivendell_home }}/rivendell/helpers/docbook/template/{{ item }}"
+    remote_src: true
+    owner: "{{ rivendell_user }}"
+    group: "{{ rivendell_user }}"
+  loop:
+    - titlepage.xml
+    - titlepage.xsl
+
 - name: Run autogen.sh
   become_user: "{{ rivendell_user }}"
   ansible.builtin.command:
