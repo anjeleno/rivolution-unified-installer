@@ -5,6 +5,11 @@
 # sudo-capable account) over SSH, or run locally via ansible-pull.
 - hosts: all
   become: true
+  # Fully unattended (cloud-init/ansible-pull, no TTY) -- without this,
+  # any package whose postinst tries a debconf prompt (interactive
+  # frontend) hangs forever waiting for input that can never arrive.
+  environment:
+    DEBIAN_FRONTEND: noninteractive
   roles:
     - base
     - desktop
