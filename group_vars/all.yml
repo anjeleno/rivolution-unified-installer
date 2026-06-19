@@ -14,7 +14,12 @@ rivendell_user: rd
 rivendell_home: "/home/{{ rivendell_user }}"
 
 # Hostname applied via hostnamectl + /etc/hosts. Override per-host in
-# inventory (host_vars/<host>.yml) when provisioning more than one box.
+# inventory (host_vars/<host>.yml) when provisioning more than one box
+# via Method 1. For Method 2 (bootstrap.sh/ansible-pull), there's no
+# real inventory, so this resolves to the literal string "localhost" --
+# the base role explicitly skips the hostname-setting tasks in that
+# case rather than actually renaming the box to "localhost". Override
+# via RIVENDELL_HOSTNAME in bootstrap.sh instead for that method.
 rivendell_hostname: "{{ inventory_hostname }}"
 
 # Where to get the Rivendell source from, and which ref to build.
@@ -25,8 +30,11 @@ rivendell_git_repo: "git@github.com:anjeleno/rivendell.git"
 rivendell_git_ref: "v4"
 
 # Build configuration passed to ./configure. Matches the golden-image
-# build: standard global paths, rdxport debug symbols, docs skipped
-# (avoids needing a full DocBook toolchain).
+# build: standard global paths, rdxport debug symbols. --disable-docs
+# is requested but not fully honored by docs/stylesheets/Makefile.am
+# (a known upstream autotools gap) -- the docs subdirectory builds
+# regardless, so the DocBook toolchain still needs to be fully
+# functional; see the build role's docbook-vendoring task.
 rivendell_configure_args:
   - "--prefix=/usr"
   - "--libdir=/usr/lib"
@@ -34,6 +42,15 @@ rivendell_configure_args:
   - "--sysconfdir=/etc"
   - "--enable-rdxport-debug"
   - "--disable-docs"
+
+# Where the docbook-xsl-ns package installs its stylesheets. Needed in
+# two distinct ways during the build: as DOCBOOK_STYLESHEETS, a plain
+# Makefile variable some doc rules reference directly and must be
+# present in the environment whenever make itself runs (not just at
+# autogen/configure time); and as the target of a symlink at
+# helpers/docbook/ inside the source tree, which other doc rules
+# reference via relative paths and which isn't tracked in git.
+rivendell_docbook_stylesheets: /usr/share/xml/docbook/stylesheet/docbook-xsl-ns
 
 # Kernel module providing your sound hardware. snd_hda_intel matches
 # the Intel HDA device emulated by UTM/most cloud hypervisors. Override

@@ -8,12 +8,14 @@
 - name: Set hostname
   ansible.builtin.hostname:
     name: "{{ rivendell_hostname }}"
+  when: rivendell_hostname != "localhost"
 
 - name: Pin 127.0.1.1 to the new hostname in /etc/hosts
   ansible.builtin.lineinfile:
     path: /etc/hosts
     regexp: '^127\.0\.1\.1\s'
     line: "127.0.1.1\t{{ rivendell_hostname }}"
+  when: rivendell_hostname != "localhost"
 
 - name: Create the unprivileged build/desktop user
   ansible.builtin.user:

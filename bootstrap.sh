@@ -21,6 +21,12 @@ INSTALLER_REPO="https://github.com/anjeleno/rivendell-golden-ansible.git"
 RIVENDELL_GIT_REPO=""
 RIVENDELL_GIT_REF=""
 
+# This method has no real Ansible inventory (just -i "localhost,"), so
+# rivendell_hostname's default ({{ inventory_hostname }}) would resolve
+# to the literal string "localhost" and the base role would skip
+# setting it. Set a real hostname here if you want one applied.
+RIVENDELL_HOSTNAME=""
+
 # Private deploy key for RIVENDELL_GIT_REPO, if it's a private repo.
 # Paste the entire key -- including the BEGIN/END lines -- between the
 # quotes below. Leave empty if the repo is public, or if this machine
@@ -34,6 +40,7 @@ apt-get install -y --no-install-recommends git ansible
 extra_vars=()
 [ -n "$RIVENDELL_GIT_REPO" ] && extra_vars+=(-e "rivendell_git_repo=$RIVENDELL_GIT_REPO")
 [ -n "$RIVENDELL_GIT_REF" ] && extra_vars+=(-e "rivendell_git_ref=$RIVENDELL_GIT_REF")
+[ -n "$RIVENDELL_HOSTNAME" ] && extra_vars+=(-e "rivendell_hostname=$RIVENDELL_HOSTNAME")
 if [ -n "$RIVENDELL_DEPLOY_KEY" ]; then
   # Written to a file rather than passed via -e: Ansible's plain
   # key=value extra-vars parsing splits on whitespace (including
