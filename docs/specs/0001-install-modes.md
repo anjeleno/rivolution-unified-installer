@@ -157,14 +157,110 @@ password and `localhost`. Needs to branch:
   real, pre-existing security looseness worth a future pass, not
   something to quietly fix as a side effect of this spec.
 
-## Open items for implementation time
+## Resolved decisions (2026-06-20)
 
-- Where `rivendell_remote_mysql_password` gets supplied for client
-  mode at runtime — should mirror the existing
-  `rivendell_deploy_key_path` convention (passed via `-e` or an
-  Ansible Vault file, never committed), not a new pattern.
-- Confirm whether `roles/desktop` (MATE/xrdp) should still run
-  unconditionally for all three modes, or only for
-  standalone/server — Client mode in the original installer doesn't
-  install a desktop at all, since it's meant to run on existing
-  on-air/production hardware, not be RDP'd into for development.
+- **`roles/desktop` (MATE/xrdp) runs unconditionally for all three
+  modes**, not just standalone/server. The original installer skips a
+  desktop for Client mode since it targets existing on-air/production
+  hardware — deliberately not followed here: the goal is drop the
+  bootstrap on any virtual or physical box and get a fully working,
+  zero-touch build consistent with the rest of this project's dev
+  setup either way. Building from source or pulling a `.deb` package
+  remain the path for anyone who wants to customize that.
+- **NFS export permissions stay as the original installer's**
+  (`*(rw,no_root_squash)`, exported to any host) — not tightened in
+  this pass. Real-world use is already behind a Tailscale network;
+  baking Tailscale-aware export restrictions in is a real idea for
+  later, not part of this spec.
+- **`RIVENDELL_REMOTE_MYSQL_HOST`/`_USER`/`_PASSWORD`/`_DATABASE` and
+  `RIVENDELL_REMOTE_NFS_HOST` fields added to `bootstrap.sh`**,
+  elaborated below — mirrors the existing `RIVENDELL_DEPLOY_KEY`
+  pattern for the password specifically, plain `-e` extra-vars for the
+  rest.
+
+### Elaboration: the `bootstrap.sh` change, concretely
+
+New fields alongside the existing ones in the "EDIT THESE" block:
+
+```bash
+# Only used when rivendell_install_mode=client (see group_vars/all.yml
+# in the installer repo) -- a remote MySQL/MariaDB host and the audio
+# store's NFS host to point this box at, instead of provisioning
+# either locally.
+RIVENDELL_REMOTE_MYSQL_HOST=""
+RIVENDELL_REMOTE_MYSQL_USER="rduser"
+RIVENDELL_REMOTE_MYSQL_PASSWORD=""
+RIVENDELL_REMOTE_MYSQL_DATABASE="Rivendell"
+RIVENDELL_REMOTE_NFS_HOST=""
+```
+
+**A real bug to design around, not just copy-paste the existing
+pattern twice:** `bootstrap.sh` currently calls `trap '...' EXIT`
+*inside* the `RIVENDELL_DEPLOY_KEY` block. Bash's `trap` *replaces* the
+previous handler for a signal rather than adding to it — calling
+`trap` a second time for the password's temp file would silently drop
+the deploy key's cleanup. Fix: hoist to a single combined trap that
+both blocks append to, set once before either conditional runs:
+
+```bash
+extra_vars=()
+
+# Temp files created below are tracked here and cleaned up by one
+# combined trap -- calling `trap ... EXIT` more than once replaces the
+# previous handler rather than adding to it, so each secret below
+# appends to this array instead of setting its own trap.
+cleanup_paths=()
+cleanup() { rm -f "${cleanup_paths[@]}"; }
+trap cleanup EXIT
+
+[ -n "$RIVENDELL_GIT_REPO" ] && extra_vars+=(-e "rivendell_git_repo=$RIVENDELL_GIT_REPO")
+[ -n "$RIVENDELL_GIT_REF" ] && extra_vars+=(-e "rivendell_git_ref=$RIVENDELL_GIT_REF")
+[ -n "$RIVENDELL_HOSTNAME" ] && extra_vars+=(-e "rivendell_hostname=$RIVENDELL_HOSTNAME")
+
+if [ -n "$RIVENDELL_DEPLOY_KEY" ]; then
+  deploy_key_path="$(mktemp)"
+  chmod 600 "$deploy_key_path"
+  printf '%s\n' "$RIVENDELL_DEPLOY_KEY" > "$deploy_key_path"
+  cleanup_paths+=("$deploy_key_path")
+  extra_vars+=(-e "rivendell_deploy_key_path=$deploy_key_path")
+fi
+
+[ -n "$RIVENDELL_REMOTE_MYSQL_HOST" ] && extra_vars+=(-e "rivendell_remote_mysql_host=$RIVENDELL_REMOTE_MYSQL_HOST")
+[ -n "$RIVENDELL_REMOTE_MYSQL_USER" ] && extra_vars+=(-e "rivendell_remote_mysql_user=$RIVENDELL_REMOTE_MYSQL_USER")
+[ -n "$RIVENDELL_REMOTE_MYSQL_DATABASE" ] && extra_vars+=(-e "rivendell_remote_mysql_database=$RIVENDELL_REMOTE_MYSQL_DATABASE")
+if [ -n "$RIVENDELL_REMOTE_MYSQL_PASSWORD" ]; then
+  # Same file-path treatment as the deploy key, and for the same
+  # reason: passing a real secret as -e content directly would put it
+  # in `ps aux` output and potentially in Ansible's own verbose
+  # logging. The multi-line-PEM parsing bug doesn't apply to a
+  # password, but the exposure risk does.
+  mysql_password_path="$(mktemp)"
+  chmod 600 "$mysql_password_path"
+  printf '%s\n' "$RIVENDELL_REMOTE_MYSQL_PASSWORD" > "$mysql_password_path"
+  cleanup_paths+=("$mysql_password_path")
+  extra_vars+=(-e "rivendell_remote_mysql_password_path=$mysql_password_path")
+fi
+[ -n "$RIVENDELL_REMOTE_NFS_HOST" ] && extra_vars+=(-e "rivendell_remote_nfs_host=$RIVENDELL_REMOTE_NFS_HOST")
+```
+
+**Consumption on the Ansible side differs from the deploy key, not
+just the variable name.** `rivendell_deploy_key_path` is consumed as a
+path — the `deploy_key` role copies that *file* into `~/.ssh/`
+directly, never reads its contents into a variable. A MySQL password
+needs to become a *string* to template into `rd.conf`'s `[mySQL]`
+section, so the role consuming it needs an explicit read step:
+
+```yaml
+- name: Read the remote MySQL password from its file
+  ansible.builtin.set_fact:
+    rivendell_remote_mysql_password: "{{ lookup('file', rivendell_remote_mysql_password_path) }}"
+  when: (rivendell_install_mode == 'client') and (rivendell_remote_mysql_password_path | default('') != '')
+```
+
+`group_vars/all.yml` gets `rivendell_remote_mysql_password_path: ""`
+instead of (or alongside, defaulting empty) the plain
+`rivendell_remote_mysql_password` placeholder shown in item 1's
+group_vars block above — the path is what actually arrives from
+`bootstrap.sh`; the plaintext variable only exists transiently after
+the `lookup('file', ...)` step runs.
+
