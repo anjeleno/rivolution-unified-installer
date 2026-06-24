@@ -1,0 +1,27 @@
+---
+# Broadcast tool suite, bundled unconditionally rather than installed
+# on demand -- mirrors the v6 install-model decision in
+# 0008-broadcast-tool-suite-integration.md (itself a continuation of
+# the same tradeoff 0007-pipewire-audio-engine.md already made for
+# PipeWire): these are dependencies of a v6 install, not optional
+# extras a station opts into one at a time. The Go dashboard governs
+# whether each tool's service is enabled/running, not whether it's
+# installed -- a station that never streams can have these present
+# but inactive, at near-zero runtime cost.
+#
+# Stereo Tool is deliberately absent from this list: it's a
+# proprietary, licensed binary with no apt package, so it can't be
+# bundled this way at all -- it's fetched by the Go dashboard itself
+# (host-OS/CPU-specific download), not provisioned here.
+#
+# Independent of which Rivendell ref this playbook builds (see
+# rivendell_git_ref in group_vars/all.yml) -- these packages don't
+# depend on the Rivendell source tree itself.
+- name: Install bundled broadcast tool suite (Icecast, Liquidsoap, VLC)
+  ansible.builtin.apt:
+    name:
+      - icecast2
+      - liquidsoap
+      - vlc
+      - vlc-plugin-jack
+    state: present

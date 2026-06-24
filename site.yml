@@ -12,6 +12,7 @@
     DEBIAN_FRONTEND: noninteractive
   roles:
     - base
+    - broadcast_tools
     - desktop
     - database
     - deploy_key
