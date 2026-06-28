@@ -11,8 +11,8 @@ test tone, PulseAudio/ALSA handoff, and service enablement at boot.
 It's a direct translation of a manual golden-image build log, refined
 across several from-source installs to catch the gaps that the
 project's own `.deb` packaging normally papers over (see the comments
-in `roles/provision/templates/rivolution-first-run.sh.j2` for the details
-on each one).
+in the main repo's `scripts/rivolution-first-run.sh`, which `roles/provision`
+calls directly, for the details on each one).
 
 Tested target: Ubuntu 24.04/26.04 (x64 and arm64), on a DigitalOcean
 Droplet, a UTM VM, and physical hardware. Debian Trixie is supported

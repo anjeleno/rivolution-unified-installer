@@ -1,13 +1,7 @@
 ---
-- name: Template the provisioning script
-  ansible.builtin.template:
-    src: rivolution-first-run.sh.j2
-    dest: /root/rivolution-first-run.sh
-    mode: "0700"
-
 # pypad.py's config.readfp() is deprecated/removed in modern Python --
 # a real upstream-source issue on any from-source build, not specific
-# to this playbook.
+# to this playbook or to advanced mode.
 - name: Check whether pypad.py is installed
   ansible.builtin.stat:
     path: /usr/lib/python3/dist-packages/rivendellaudio/pypad.py
@@ -20,12 +14,60 @@
     replace: "config.read('/etc/rd.conf')"
   when: pypad_py.stat.exists
 
-# Not idempotent by design -- it drops and rebuilds the Rivendell
-# database from scratch. The /etc/rivolution-installer-provisioned
-# marker (touched at the end of the script) makes sure that only
-# happens once per host: re-running this playbook later (e.g. to pick
-# up a package update) won't wipe a station's live database.
-- name: Run the provisioning script (first run only)
+# client mode points at a database that already exists elsewhere, so
+# rd.conf needs the remote connection values instead of a locally
+# generated password -- written here, before the script below runs
+# with RIVENDELL_SKIP_DB_SETUP set, so the script never touches it.
+- name: Populate /etc/rd.conf for client mode
+  when: rivolution_install_mode == 'client'
+  block:
+    - name: Read the remote MySQL password from its file
+      ansible.builtin.set_fact:
+        rivolution_remote_mysql_password: "{{ lookup('file', rivolution_remote_mysql_password_path) }}"
+      when: rivolution_remote_mysql_password_path | default('') != ''
+      no_log: true
+
+    - name: Copy rd.conf-sample as the base for rd.conf
+      ansible.builtin.copy:
+        src: "{{ rivolution_home }}/rivolution/conf/rd.conf-sample"
+        dest: /etc/rd.conf
+        remote_src: true
+        force: false
+
+    - name: Point rd.conf's [mySQL] section at the remote database
+      ansible.builtin.replace:
+        path: /etc/rd.conf
+        regexp: "{{ item.regexp }}"
+        replace: "{{ item.replace }}"
+      loop:
+        - regexp: '^Hostname=.*'
+          replace: "Hostname={{ rivolution_remote_mysql_host }}"
+        - regexp: '^Loginname=.*'
+          replace: "Loginname={{ rivolution_remote_mysql_user }}"
+        - regexp: '^Password=.*'
+          replace: "Password={{ rivolution_remote_mysql_password | default('') }}"
+        - regexp: '^Database=.*'
+          replace: "Database={{ rivolution_remote_mysql_database }}"
+      no_log: true
+
+# Not idempotent by design -- standalone/server mode drops and rebuilds
+# the database from scratch. The /etc/rivolution-installer-provisioned
+# marker makes sure that only happens once per host: re-running this
+# playbook later (e.g. to pick up a package update) won't wipe a
+# station's live database. Client mode never touches a local database
+# at all, but still only needs the user/group/audio setup applied once.
+- name: Run the real first-run script (first run only)
   ansible.builtin.command:
-    cmd: /root/rivolution-first-run.sh
+    cmd: "{{ rivolution_home }}/rivolution/scripts/rivolution-first-run.sh"
     creates: /etc/rivolution-installer-provisioned
+  environment:
+    RIVENDELL_USER: "{{ rivolution_user }}"
+    RIVENDELL_SKIP_DB_SETUP: "{{ '1' if rivolution_install_mode == 'client' else '' }}"
+  register: first_run_script
+
+- name: Mark this host as provisioned
+  ansible.builtin.file:
+    path: /etc/rivolution-installer-provisioned
+    state: touch
+    mode: "0644"
+  when: first_run_script is changed
