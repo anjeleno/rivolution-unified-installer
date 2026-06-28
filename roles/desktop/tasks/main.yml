@@ -1,51 +1,65 @@
 ---
-- name: Install MATE desktop meta-package
-  ansible.builtin.apt:
-    name: "{{ 'task-mate-desktop' if rivolution_target_os == 'debian' else 'ubuntu-mate-core' }}"
-    state: present
-    install_recommends: false
+# /etc/X11/default-display-manager is set by the standard Debian/
+# Ubuntu packaging hooks whenever any display manager (gdm3, lightdm,
+# sddm, lxdm, ...) has already been configured -- a single reliable
+# signal regardless of which one, rather than grepping for each by
+# name individually.
+- name: Check whether a desktop environment is already present
+  ansible.builtin.stat:
+    path: /etc/X11/default-display-manager
+  register: rivolution_existing_display_manager
 
-- name: Install remote-access packages
-  ansible.builtin.apt:
-    name:
-      - mate-system-monitor
-      - xrdp
-      - xorgxrdp
-      - dbus-x11
-    state: present
-    install_recommends: false
+- name: Install MATE desktop and remote access (skipped if a desktop already exists)
+  when: not rivolution_existing_display_manager.stat.exists
+  block:
+    - name: Install MATE desktop meta-package
+      ansible.builtin.apt:
+        name: "{{ 'task-mate-desktop' if rivolution_target_os == 'debian' else 'ubuntu-mate-core' }}"
+        state: present
+        install_recommends: false
 
-- name: Set MATE as the default X session manager
-  community.general.alternatives:
-    name: x-session-manager
-    path: /usr/bin/mate-session
+    - name: Install remote-access packages
+      ansible.builtin.apt:
+        name:
+          - mate-system-monitor
+          - xrdp
+          - xorgxrdp
+          - dbus-x11
+        state: present
+        install_recommends: false
 
-# A bug in the current version of xrdp causes the default session
-# with running GUI applications to crash and then become orphaned.
-# The workaround (verified in rivolution.wiki's Build-From-Source
-# guide): disable the accelerated-graphics check -- this doesn't
-# disable accelerated graphics on a supported system, only the check.
-- name: Disable mate-session-check-accelerated* (xrdp crash workaround)
-  ansible.builtin.command:
-    cmd: "mv /usr/libexec/{{ item }} /usr/libexec/{{ item }}.disabled"
-    creates: "/usr/libexec/{{ item }}.disabled"
-  loop:
-    - mate-session-check-accelerated
-    - mate-session-check-accelerated-gl-helper
-    - mate-session-check-accelerated-gles-helper
+    - name: Set MATE as the default X session manager
+      community.general.alternatives:
+        name: x-session-manager
+        path: /usr/bin/mate-session
 
-- name: Restart xrdp
-  ansible.builtin.systemd:
-    name: xrdp
-    state: restarted
-    enabled: true
+    # A bug in the current version of xrdp causes the default session
+    # with running GUI applications to crash and then become orphaned.
+    # The workaround (verified in rivolution.wiki's Build-From-Source
+    # guide): disable the accelerated-graphics check -- this doesn't
+    # disable accelerated graphics on a supported system, only the
+    # check.
+    - name: Disable mate-session-check-accelerated* (xrdp crash workaround)
+      ansible.builtin.command:
+        cmd: "mv /usr/libexec/{{ item }} /usr/libexec/{{ item }}.disabled"
+        creates: "/usr/libexec/{{ item }}.disabled"
+      loop:
+        - mate-session-check-accelerated
+        - mate-session-check-accelerated-gl-helper
+        - mate-session-check-accelerated-gles-helper
 
-- name: Symlink root's Xauthority to the build user's (fixes Qt6/XCB errors for root-run Rivendell tools under xrdp)
-  ansible.builtin.file:
-    src: "{{ rivolution_home }}/.Xauthority"
-    dest: /root/.Xauthority
-    state: link
-    force: true
+    - name: Restart xrdp
+      ansible.builtin.systemd:
+        name: xrdp
+        state: restarted
+        enabled: true
+
+    - name: Symlink root's Xauthority to the build user's (fixes Qt6/XCB errors for root-run Rivendell tools under xrdp)
+      ansible.builtin.file:
+        src: "{{ rivolution_home }}/.Xauthority"
+        dest: /root/.Xauthority
+        state: link
+        force: true
 
 # Detection order (only consulted when rivolution_audio_kernel_module
 # is left blank -- an explicit override always wins):
