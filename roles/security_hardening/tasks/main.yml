@@ -1,0 +1,104 @@
+---
+# Independent of rivolution_advanced_broadcast_config -- a station may
+# want hardened SSH and a firewall regardless of whether it's running
+# any broadcast tooling at all.
+- name: Security hardening
+  when: rivolution_harden_security | bool
+  block:
+    - name: Install ufw
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+
+    - name: Allow Icecast (8000/tcp)
+      community.general.ufw:
+        rule: allow
+        port: "8000"
+        proto: tcp
+
+    - name: Allow SSH
+      community.general.ufw:
+        rule: allow
+        name: OpenSSH
+
+    - name: Allow the configured external IP, if set
+      community.general.ufw:
+        rule: allow
+        src: "{{ rivolution_harden_external_ip }}"
+      when: rivolution_harden_external_ip | length > 0
+
+    - name: Allow the configured LAN subnet, if set
+      community.general.ufw:
+        rule: allow
+        src: "{{ rivolution_harden_lan_subnet }}"
+      when: rivolution_harden_lan_subnet | length > 0
+
+    - name: Enable ufw
+      community.general.ufw:
+        state: enabled
+
+    # Disabling SSH password auth is only safe if a key-based login
+    # path actually exists -- checked automatically (this playbook runs
+    # unattended, so there's no one to ask "are you sure a key already
+    # works?" the way the original manual script did) rather than
+    # trusting a y/n confirmation that can't really be given here.
+    - name: Check for an existing authorized_keys file for the build user
+      ansible.builtin.stat:
+        path: "{{ rivolution_home }}/.ssh/authorized_keys"
+      register: rivolution_authorized_keys
+
+    - name: Harden SSH (key-only login)
+      when: rivolution_authorized_keys.stat.exists and rivolution_authorized_keys.stat.size > 0
+      block:
+        - name: Back up sshd_config before editing
+          ansible.builtin.copy:
+            src: /etc/ssh/sshd_config
+            dest: /etc/ssh/sshd_config-BAK
+            remote_src: true
+            force: false
+
+        - name: Check for a cloud-init SSH config override
+          ansible.builtin.stat:
+            path: /etc/ssh/sshd_config.d/50-cloud-init.conf
+          register: rivolution_cloud_init_sshd
+
+        - name: Back up the cloud-init SSH config override, if present
+          ansible.builtin.copy:
+            src: /etc/ssh/sshd_config.d/50-cloud-init.conf
+            dest: /etc/ssh/sshd_config.d/50-cloud-init.conf-BAK
+            remote_src: true
+            force: false
+          when: rivolution_cloud_init_sshd.stat.exists
+
+        - name: Enable pubkey authentication
+          ansible.builtin.lineinfile:
+            path: /etc/ssh/sshd_config
+            regexp: '^#?PubkeyAuthentication\s'
+            line: "PubkeyAuthentication yes"
+
+        - name: Disable password authentication
+          ansible.builtin.lineinfile:
+            path: /etc/ssh/sshd_config
+            regexp: '^#?PasswordAuthentication\s'
+            line: "PasswordAuthentication no"
+
+        - name: Disable password authentication in the cloud-init override too, if present
+          ansible.builtin.lineinfile:
+            path: /etc/ssh/sshd_config.d/50-cloud-init.conf
+            regexp: '^PasswordAuthentication\s'
+            line: "PasswordAuthentication no"
+          when: rivolution_cloud_init_sshd.stat.exists
+
+        - name: Restart SSH
+          ansible.builtin.systemd:
+            name: ssh
+            state: restarted
+
+    - name: Warn that SSH was not hardened
+      ansible.builtin.debug:
+        msg: >-
+          Skipped SSH password-auth hardening: no authorized_keys file
+          found for {{ rivolution_user }} yet. Add your public key to
+          {{ rivolution_home }}/.ssh/authorized_keys first, then re-run
+          with rivolution_harden_security enabled.
+      when: not (rivolution_authorized_keys.stat.exists and rivolution_authorized_keys.stat.size > 0)

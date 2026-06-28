@@ -68,6 +68,16 @@ rivolution_remote_nfs_host: ""
 # the existing database, after a backup) the first time it runs.
 rivolution_advanced_broadcast_config: false
 
+# Separate from advanced mode above -- a station may want hardened SSH
+# and a firewall independent of whether it's running any broadcast
+# tooling at all. Off by default. Opens 8000/tcp (Icecast) and SSH,
+# plus the optional external IP/LAN subnet below if set, then disables
+# SSH password authentication -- but only if a key-based login path
+# already exists, checked automatically rather than just asked.
+rivolution_harden_security: false
+rivolution_harden_external_ip: ""
+rivolution_harden_lan_subnet: ""
+
 # Optional: path to a private SSH key file (e.g. a read-only GitHub
 # deploy key), supplied at runtime -- never commit a real value for
 # this. A file path, not the key content itself: passing multi-line

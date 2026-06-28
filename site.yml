@@ -21,3 +21,7 @@
     - webserver
     - provision
     - broadcast_advanced
+    # Runs last -- may disable SSH password auth, so everything else
+    # should already be done before access could become more
+    # restricted.
+    - security_hardening

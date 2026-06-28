@@ -243,6 +243,16 @@ This software is provided **as-is, with no warranty** -- keep your own
 backup too, not just the automatic one, if the existing database
 matters to you.
 
+## Security hardening
+
+`rivolution_harden_security` (default `false`), independent of
+advanced mode -- installs `ufw` (allowing Icecast's port, SSH, and the
+optional `rivolution_harden_external_ip`/`rivolution_harden_lan_subnet`),
+then disables SSH password authentication, but only if an
+`authorized_keys` file already exists for the build user. If one
+doesn't exist yet, SSH hardening is skipped with a warning rather than
+risking a lockout.
+
 ## What's intentionally not automated
 
 - Phase 0 (creating the Droplet / installing a base OS on a UTM VM or
