@@ -1,4 +1,9 @@
 ---
+# rd-bin.conf itself needs no manual symlinking here: roles/build now
+# runs configure_build.sh, which sets --sysconfdir=/etc/apache2/conf-enabled
+# directly, so `make install` already drops it at its final location
+# (conf/Makefile.am installs it to $(sysconfdir)/rd-bin.conf).
+
 - name: Enable Apache CGI module (conf)
   ansible.builtin.file:
     src: ../mods-available/cgid.conf
@@ -10,13 +15,6 @@
   ansible.builtin.file:
     src: ../mods-available/cgid.load
     dest: /etc/apache2/mods-enabled/cgid.load
-    state: link
-    force: true
-
-- name: Link Rivendell's web config into Apache
-  ansible.builtin.file:
-    src: /etc/rd-bin.conf
-    dest: /etc/apache2/conf-enabled/rd-bin.conf
     state: link
     force: true
 

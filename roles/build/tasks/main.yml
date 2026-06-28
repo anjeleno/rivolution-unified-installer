@@ -4,53 +4,44 @@
     name: git
     state: present
 
-- name: Clone the Rivendell source tree
-  become_user: "{{ rivendell_user }}"
+- name: Clone the Rivolution source tree
+  become_user: "{{ rivolution_user }}"
   ansible.builtin.git:
-    repo: "{{ rivendell_git_repo }}"
-    dest: "{{ rivendell_home }}/rivendell"
-    version: "{{ rivendell_git_ref }}"
+    repo: "{{ rivolution_git_repo }}"
+    dest: "{{ rivolution_home }}/rivolution"
+    version: "{{ rivolution_git_ref }}"
     accept_hostkey: true
 
-- name: Symlink helpers/docbook to the system docbook-xsl-ns stylesheets (not tracked in git, but several doc build rules reference it via relative path even with --disable-docs)
-  ansible.builtin.file:
-    src: "{{ rivendell_docbook_stylesheets }}"
-    dest: "{{ rivendell_home }}/rivendell/helpers/docbook"
-    state: link
-    owner: "{{ rivendell_user }}"
-    group: "{{ rivendell_user }}"
-
-- name: Run autogen.sh
-  become_user: "{{ rivendell_user }}"
+# configure_build.sh (shipped in the source tree) auto-detects the
+# distro and runs both autogen.sh and the real ./configure with the
+# right --prefix/--libdir/--libexecdir/--sysconfdir/MUSICBRAINZ_LIBS
+# for it -- no need to hand-maintain those flags here. configure.ac's
+# own DocBook detection also creates the helpers/docbook stylesheet
+# symlink automatically now, so no manual vendoring step is needed
+# either.
+- name: Run configure_build.sh
+  become_user: "{{ rivolution_user }}"
   ansible.builtin.command:
-    cmd: ./autogen.sh
-    chdir: "{{ rivendell_home }}/rivendell"
-    creates: "{{ rivendell_home }}/rivendell/configure"
-  environment:
-    DOCBOOK_STYLESHEETS: "{{ rivendell_docbook_stylesheets }}"
-
-- name: Run configure
-  become_user: "{{ rivendell_user }}"
-  ansible.builtin.command:
-    cmd: >
-      ./configure {{ rivendell_configure_args | join(' ') }}
-      MUSICBRAINZ_LIBS="-ldiscid -lmusicbrainz5cc -lcoverartcc"
-    chdir: "{{ rivendell_home }}/rivendell"
-    creates: "{{ rivendell_home }}/rivendell/Makefile"
-  environment:
-    DOCBOOK_STYLESHEETS: "{{ rivendell_docbook_stylesheets }}"
+    cmd: ./configure_build.sh
+    chdir: "{{ rivolution_home }}/rivolution"
+    creates: "{{ rivolution_home }}/rivolution/Makefile"
 
 - name: Compile (make -j{{ ansible_processor_vcpus | default(2) }})
-  become_user: "{{ rivendell_user }}"
+  become_user: "{{ rivolution_user }}"
   ansible.builtin.command:
     cmd: "make -j{{ ansible_processor_vcpus | default(2) }}"
-    chdir: "{{ rivendell_home }}/rivendell"
-  environment:
-    DOCBOOK_STYLESHEETS: "{{ rivendell_docbook_stylesheets }}"
+    chdir: "{{ rivolution_home }}/rivolution"
 
 - name: Install compiled binaries
   ansible.builtin.command:
     cmd: make install
-    chdir: "{{ rivendell_home }}/rivendell"
-  environment:
-    DOCBOOK_STYLESHEETS: "{{ rivendell_docbook_stylesheets }}"
+    chdir: "{{ rivolution_home }}/rivolution"
+
+# Required, not optional: without this, every Rivendell binary fails
+# immediately with "error while loading shared libraries" even though
+# the file genuinely exists -- make install doesn't refresh the
+# linker's cache itself.
+- name: Refresh the linker cache
+  ansible.builtin.command:
+    cmd: ldconfig
+  changed_when: false

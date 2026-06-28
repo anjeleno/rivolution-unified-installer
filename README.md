@@ -1,7 +1,7 @@
-# Rivendell golden-image installer
+# Rivolution golden-image installer
 
 An Ansible playbook that provisions a fresh Ubuntu 24.04 machine into a
-working Rivendell radio automation install, from source, end to end:
+working Rivolution radio automation install, from source, end to end:
 build dependencies, desktop/xrdp/MATE, MariaDB, compile + install,
 Apache/`rdxport.cgi` wiring, the `rivendell`/`pypad` system users and
 `/var/snd`, a freshly generated database password, schema + seed data +
@@ -18,15 +18,12 @@ physical hardware.
 
 ## Quick start: DigitalOcean Droplet
 
-1. **Before copying:** by default this builds a private fork
-   (`anjeleno/rivendell`). If you don't have access to it, edit the
-   `RIVENDELL_GIT_REPO` line below first -- e.g. set it to
-   `https://github.com/ElvishArtisan/rivendell.git` (the public
-   upstream) -- or the build will fail at the git clone step. See
-   "Important" below for details.
-2. Copy the block below.
-3. DigitalOcean Droplet creation screen -> Additional Options -> Startup scripts (Free), paste it in.
-4. Create the Droplet. It boots, installs Ansible, and provisions
+1. Copy the block below as-is -- by default this builds the public
+   `anjeleno/rivolution` repo, so no edits are required to get started.
+   Only edit the `RIVOLUTION_GIT_REPO` line if you want to point this
+   at your own fork instead. See "Important" below for details.
+2. DigitalOcean Droplet creation screen -> Additional Options -> Startup scripts (Free), paste it in.
+3. Create the Droplet. It boots, installs Ansible, and provisions
    itself automatically -- no SSH in required to kick it off.
 
 ```bash
@@ -49,40 +46,52 @@ set -euo pipefail
 # This installer repo itself (safe to leave as-is once published).
 INSTALLER_REPO="https://github.com/anjeleno/rivendell-golden-ansible.git"
 
-# Only needed if you want to override the defaults in group_vars/all.yml.
-RIVENDELL_GIT_REPO=""
-RIVENDELL_GIT_REF=""
+# Only needed if you want to override the defaults in group_vars/all.yml
+# (e.g. to point at your own fork instead of the public rivolution repo).
+RIVOLUTION_GIT_REPO=""
+RIVOLUTION_GIT_REF=""
 
 # This method has no real Ansible inventory (just -i "localhost,"), so
-# rivendell_hostname's default ({{ inventory_hostname }}) would resolve
+# rivolution_hostname's default ({{ inventory_hostname }}) would resolve
 # to the literal string "localhost" and the base role would skip
 # setting it. Defaults to "onair" -- override to name this box something
 # else.
-RIVENDELL_HOSTNAME="onair"
+RIVOLUTION_HOSTNAME="onair"
 
-# Private deploy key for RIVENDELL_GIT_REPO, if it's a private repo.
-# Paste the entire key -- including the BEGIN/END lines -- between the
-# quotes below. Leave empty if the repo is public, or if this machine
-# already has its own working git credentials configured.
-RIVENDELL_DEPLOY_KEY=""
+# Private deploy key for RIVOLUTION_GIT_REPO, only needed if you've set
+# that to a private repo above. Paste the entire key -- including the
+# BEGIN/END lines -- between the quotes below. Leave empty if you're
+# using the public default, or if this machine already has its own
+# working git credentials configured.
+RIVOLUTION_DEPLOY_KEY=""
 # ----------------------------------------------------------------------
 
 apt-get update
 apt-get install -y --no-install-recommends git ansible
 
 extra_vars=()
-[ -n "$RIVENDELL_GIT_REPO" ] && extra_vars+=(-e "rivendell_git_repo=$RIVENDELL_GIT_REPO")
-[ -n "$RIVENDELL_GIT_REF" ] && extra_vars+=(-e "rivendell_git_ref=$RIVENDELL_GIT_REF")
-[ -n "$RIVENDELL_HOSTNAME" ] && extra_vars+=(-e "rivendell_hostname=$RIVENDELL_HOSTNAME")
-if [ -n "$RIVENDELL_DEPLOY_KEY" ]; then
+
+# Temp files created below are tracked here and cleaned up by one
+# combined trap -- calling `trap ... EXIT` more than once replaces the
+# previous handler rather than adding to it, so each secret below
+# appends to this array instead of setting its own trap.
+cleanup_paths=()
+cleanup() { rm -f "${cleanup_paths[@]}"; }
+trap cleanup EXIT
+
+[ -n "$RIVOLUTION_GIT_REPO" ] && extra_vars+=(-e "rivolution_git_repo=$RIVOLUTION_GIT_REPO")
+[ -n "$RIVOLUTION_GIT_REF" ] && extra_vars+=(-e "rivolution_git_ref=$RIVOLUTION_GIT_REF")
+[ -n "$RIVOLUTION_HOSTNAME" ] && extra_vars+=(-e "rivolution_hostname=$RIVOLUTION_HOSTNAME")
+
+if [ -n "$RIVOLUTION_DEPLOY_KEY" ]; then
   # Written to a file rather than passed via -e: Ansible's plain
   # key=value extra-vars parsing splits on whitespace (including
   # newlines), which silently truncates a multi-line PEM key.
   deploy_key_path="$(mktemp)"
   chmod 600 "$deploy_key_path"
-  printf '%s\n' "$RIVENDELL_DEPLOY_KEY" > "$deploy_key_path"
-  trap 'rm -f "$deploy_key_path"' EXIT
-  extra_vars+=(-e "rivendell_deploy_key_path=$deploy_key_path")
+  printf '%s\n' "$RIVOLUTION_DEPLOY_KEY" > "$deploy_key_path"
+  cleanup_paths+=("$deploy_key_path")
+  extra_vars+=(-e "rivolution_deploy_key_path=$deploy_key_path")
 fi
 
 ansible-galaxy collection install community.general
@@ -103,19 +112,20 @@ UTM VM or physical box instead of a Droplet, download `bootstrap.sh`
 and run it as root the same way (`sudo bash bootstrap.sh`) instead of
 pasting it into a cloud provider's startup-script field.
 
-## Important: this builds a specific git repo, which may be private
+## Important: this builds the public Rivolution repo by default
 
-`group_vars/all.yml` defaults `rivendell_git_repo` to a private fork.
-**If you don't have read access to that repo, the build step will fail
-at the git clone.** Before running this against your own machine, set:
+`group_vars/all.yml` defaults `rivolution_git_repo` to the public
+`anjeleno/rivolution` repo on the `main` branch -- no access or key
+needed to use the defaults as-is. Only override these if you want to
+point the build at your own fork instead:
 
 ```yaml
-rivendell_git_repo: https://github.com/ElvishArtisan/rivendell.git  # public upstream
-rivendell_git_ref: v4                                                # or any tag/branch you want
+rivolution_git_repo: git@github.com:youraccount/rivolution.git
+rivolution_git_ref: your-branch-or-tag
 ```
 
-or point it at your own fork. If your repo is private, see "Private
-repo access" below.
+If you point this at your own *private* fork, see "Private repo
+access" below.
 
 ## Usage
 
@@ -148,9 +158,11 @@ whatever's (or isn't) in that file. It exists purely for Method 1.
 
 ## Private repo access
 
-`rivendell_deploy_key_path` (in `group_vars/all.yml`, or passed via
+Only relevant if you've repointed `rivolution_git_repo` at your own
+private fork -- the public default needs none of this.
+`rivolution_deploy_key_path` (in `group_vars/all.yml`, or passed via
 `-e`/`bootstrap.sh`) is a path to a private SSH key file with read
-access to `rivendell_git_repo` -- a file path, not the key content
+access to `rivolution_git_repo` -- a file path, not the key content
 itself, since passing multi-line PEM content directly as an extra-var
 value doesn't survive Ansible's CLI parsing. When set, the
 `deploy_key` role copies it into the build user's `~/.ssh/`, scoped to
@@ -182,7 +194,7 @@ it'd show up in shell history.
 Everything except the database/test-tone step is safe to re-run (it'll
 just confirm the existing state and move on). The database step is
 deliberately **not** idempotent -- it drops and rebuilds the schema
-from scratch -- so it's guarded by a `/etc/rivendell-installer-provisioned`
+from scratch -- so it's guarded by a `/etc/rivolution-installer-provisioned`
 marker file and only ever runs once per host. Delete that marker
 yourself if you genuinely want to wipe and rebuild an existing
 install's database.

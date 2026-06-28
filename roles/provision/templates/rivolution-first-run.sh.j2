@@ -9,8 +9,8 @@
 # rivendell.service at boot. All for a from-source Rivendell build that
 # never ran the .deb package's postinst script.
 #
-# Templated by Ansible (roles/provision) -- {{ rivendell_user }}/
-# {{ rivendell_home }} below come from group_vars/all.yml.
+# Templated by Ansible (roles/provision) -- {{ rivolution_user }}/
+# {{ rivolution_home }} below come from group_vars/all.yml.
 #
 # UID/GID 150/151 are upstream's own fixed values (debian/postinst),
 # not arbitrary -- kept for permission consistency across any future
@@ -27,7 +27,7 @@ chown rivendell:rivendell /var/snd
 chmod 775 /var/snd
 
 # Copy rd.conf sample file
-cp {{ rivendell_home }}/rivendell/conf/rd.conf-sample /etc/rd.conf
+cp {{ rivolution_home }}/rivolution/conf/rd.conf-sample /etc/rd.conf
 
 # Generate a long, unique password for 'rduser' -- the sample ships with
 # a fixed, public default ('hackme') -- and write it into rd.conf's
@@ -70,7 +70,7 @@ rddbmgr --create --generate-audio
 killall pulseaudio || true
 sed -i 's/# autospawn = yes/autospawn = no/' /etc/pulse/client.conf
 gpasswd -d pulse audio || true
-usermod -aG audio {{ rivendell_user }}
+usermod -aG audio {{ rivolution_user }}
 usermod -aG audio rivendell
 grep -qF '@audio      hard      memlock     unlimited' /etc/security/limits.conf || cat >> /etc/security/limits.conf <<'EOF'
 @audio      hard      rtprio          90
@@ -80,6 +80,6 @@ EOF
 systemctl enable rivendell.service
 systemctl restart rivendell.service
 
-touch /etc/rivendell-installer-provisioned
+touch /etc/rivolution-installer-provisioned
 
 echo "Done. Verify with: getent passwd rivendell; getent group rivendell; ls -ld /var/snd; systemctl is-enabled rivendell"

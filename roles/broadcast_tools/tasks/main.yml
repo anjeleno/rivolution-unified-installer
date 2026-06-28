@@ -14,9 +14,9 @@
 # bundled this way at all -- it's fetched by the Go dashboard itself
 # (host-OS/CPU-specific download), not provisioned here.
 #
-# Independent of which Rivendell ref this playbook builds (see
-# rivendell_git_ref in group_vars/all.yml) -- these packages don't
-# depend on the Rivendell source tree itself.
+# Independent of which Rivolution ref this playbook builds (see
+# rivolution_git_ref in group_vars/all.yml) -- these packages don't
+# depend on the Rivolution source tree itself.
 - name: Install bundled broadcast tool suite (Icecast, Liquidsoap, VLC)
   ansible.builtin.apt:
     name:

@@ -7,28 +7,56 @@
 
 - name: Set hostname
   ansible.builtin.hostname:
-    name: "{{ rivendell_hostname }}"
-  when: rivendell_hostname != "localhost"
+    name: "{{ rivolution_hostname }}"
+  when: rivolution_hostname != "localhost"
 
 - name: Pin 127.0.1.1 to the new hostname in /etc/hosts
   ansible.builtin.lineinfile:
     path: /etc/hosts
     regexp: '^127\.0\.1\.1\s'
-    line: "127.0.1.1\t{{ rivendell_hostname }}"
-  when: rivendell_hostname != "localhost"
+    line: "127.0.1.1\t{{ rivolution_hostname }}"
+  when: rivolution_hostname != "localhost"
+
+# Matches the manual walkthrough in rivolution.wiki's Build-From-Source
+# guide -- dpkg-reconfigure's debconf prompt is interactive by design,
+# but site.yml already sets DEBIAN_FRONTEND=noninteractive, so this
+# applies the system's already-configured default non-interactively
+# rather than blocking on a prompt that can never be answered.
+- name: Set NTP time sync
+  ansible.builtin.command:
+    cmd: timedatectl set-ntp yes
+  changed_when: false
 
 - name: Create the unprivileged build/desktop user
   ansible.builtin.user:
-    name: "{{ rivendell_user }}"
+    name: "{{ rivolution_user }}"
     groups: sudo
     append: true
     shell: /bin/bash
     create_home: true
 
+# Reconciled directly against rivolution.wiki's Build-From-Source
+# guide -- verified working on a real DigitalOcean droplet (Ubuntu
+# 24.04). Qt6, not Qt5 -- libqt5webkit5-dev has no Qt6 equivalent at
+# all, replaced by qt6-webengine-dev.
 - name: Install build dependencies
   ansible.builtin.apt:
     name:
-      - apache2
+      - git
+      - g++
+      - automake
+      - autoconf
+      - autoconf-archive
+      - libtool
+      - libltdl-dev
+      - make
+      - debhelper
+      - qt6-base-dev
+      - qt6-base-dev-tools
+      - qt6-l10n-tools
+      - qt6-webengine-dev
+      - qt6-webengine-dev-tools
+      - libqt6sql6-mysql
       - libexpat1-dev
       - libexpat1
       - libid3-dev
@@ -40,19 +68,7 @@
       - libsndfile1-dev
       - libpam0g-dev
       - libvorbis-dev
-      - python3
-      - python3-pycurl
-      - python3-pymysql
-      - python3-serial
-      - python3-requests
-      - python3-venv
-      - python3-virtualenv
-      - python3-build
-      - twine
       - libsamplerate0-dev
-      - qtbase5-dev
-      - libqt5sql5-mysql
-      - libqt5webkit5-dev
       - libsoundtouch-dev
       - libsystemd-dev
       - libjack-jackd2-dev
@@ -62,27 +78,36 @@
       - libmp3lame-dev
       - libmad0-dev
       - libtwolame-dev
+      - libssl-dev
+      - libtag1-dev
+      - libmagick++-dev
+      - alsa-utils
+      - alsa-tools
+      - alsa-tools-gui
+      - alsa-firmware-loaders
+      - libasound2-plugins
       - docbook5-xml
-      - libxml2-utils
       - docbook-xsl-ns
       - xsltproc
       - fop
-      - make
-      - g++
-      - libltdl-dev
-      - autoconf
-      - automake
-      - libssl-dev
-      - libtag1-dev
-      - qttools5-dev-tools
-      - debhelper
+      - libxml2-utils
+      - python3
+      - python3-pycurl
+      - python3-pymysql
+      - python3-serial
+      - python3-requests
+      - python3-venv
+      - python3-virtualenv
+      - python3-build
+      - twine
+      - apache2
+      - mariadb-server
+      - mariadb-client
+      - mp3gain
       - openssh-server
-      - autoconf-archive
       - gnupg
       - pbuilder
-      - ubuntu-dev-tools
       - apt-file
-      - libmagick++-dev
-      - docbook-xsl
       - "linux-modules-extra-{{ ansible_kernel }}"
+      - ubuntu-dev-tools
     state: present

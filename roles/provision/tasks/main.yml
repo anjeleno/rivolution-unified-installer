@@ -5,12 +5,27 @@
     dest: /root/rivolution-first-run.sh
     mode: "0700"
 
+# pypad.py's config.readfp() is deprecated/removed in modern Python --
+# a real upstream-source issue on any from-source build, not specific
+# to this playbook.
+- name: Check whether pypad.py is installed
+  ansible.builtin.stat:
+    path: /usr/lib/python3/dist-packages/rivendellaudio/pypad.py
+  register: pypad_py
+
+- name: Fix deprecated config.readfp() in pypad.py
+  ansible.builtin.replace:
+    path: /usr/lib/python3/dist-packages/rivendellaudio/pypad.py
+    regexp: "config\\.readfp\\(open\\('/etc/rd\\.conf'\\)\\)"
+    replace: "config.read('/etc/rd.conf')"
+  when: pypad_py.stat.exists
+
 # Not idempotent by design -- it drops and rebuilds the Rivendell
-# database from scratch. The /etc/rivendell-installer-provisioned
+# database from scratch. The /etc/rivolution-installer-provisioned
 # marker (touched at the end of the script) makes sure that only
 # happens once per host: re-running this playbook later (e.g. to pick
 # up a package update) won't wipe a station's live database.
 - name: Run the provisioning script (first run only)
   ansible.builtin.command:
     cmd: /root/rivolution-first-run.sh
-    creates: /etc/rivendell-installer-provisioned
+    creates: /etc/rivolution-installer-provisioned

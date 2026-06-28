@@ -15,32 +15,46 @@
     name: x-session-manager
     path: /usr/bin/mate-session
 
+# A bug in the current version of xrdp causes the default session
+# with running GUI applications to crash and then become orphaned.
+# The workaround (verified in rivolution.wiki's Build-From-Source
+# guide): disable the accelerated-graphics check -- this doesn't
+# disable accelerated graphics on a supported system, only the check.
+- name: Disable mate-session-check-accelerated* (xrdp crash workaround)
+  ansible.builtin.command:
+    cmd: "mv /usr/libexec/{{ item }} /usr/libexec/{{ item }}.disabled"
+    creates: "/usr/libexec/{{ item }}.disabled"
+  loop:
+    - mate-session-check-accelerated
+    - mate-session-check-accelerated-gl-helper
+    - mate-session-check-accelerated-gles-helper
+
 - name: Restart xrdp
   ansible.builtin.systemd:
     name: xrdp
     state: restarted
     enabled: true
 
-- name: Symlink root's Xauthority to the build user's (fixes Qt5/XCB errors for root-run Rivendell tools under xrdp)
+- name: Symlink root's Xauthority to the build user's (fixes Qt6/XCB errors for root-run Rivendell tools under xrdp)
   ansible.builtin.file:
-    src: "{{ rivendell_home }}/.Xauthority"
+    src: "{{ rivolution_home }}/.Xauthority"
     dest: /root/.Xauthority
     state: link
     force: true
 
 - name: Load the audio kernel module now
   ansible.builtin.modprobe:
-    name: "{{ rivendell_audio_kernel_module }}"
+    name: "{{ rivolution_audio_kernel_module }}"
     state: present
 
 - name: Load the audio kernel module on every boot
   ansible.builtin.copy:
-    dest: /etc/modules-load.d/rivendell-audio.conf
-    content: "{{ rivendell_audio_kernel_module }}\n"
+    dest: /etc/modules-load.d/rivolution-audio.conf
+    content: "{{ rivolution_audio_kernel_module }}\n"
     mode: "0644"
 
 - name: Add the build user to the audio group
   ansible.builtin.user:
-    name: "{{ rivendell_user }}"
+    name: "{{ rivolution_user }}"
     groups: audio
     append: true

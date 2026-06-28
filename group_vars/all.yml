@@ -9,9 +9,9 @@
 # Gleason's own Rivendell installation tutorials, kept here so installs
 # built with this playbook stay consistent with that convention.
 # Override if your organization already has its own naming standard.
-rivendell_user: rd
+rivolution_user: rd
 
-rivendell_home: "/home/{{ rivendell_user }}"
+rivolution_home: "/home/{{ rivolution_user }}"
 
 # Hostname applied via hostnamectl + /etc/hosts. Override per-host in
 # inventory (host_vars/<host>.yml) when provisioning more than one box
@@ -19,50 +19,25 @@ rivendell_home: "/home/{{ rivendell_user }}"
 # real inventory, so this resolves to the literal string "localhost" --
 # the base role explicitly skips the hostname-setting tasks in that
 # case rather than actually renaming the box to "localhost". Override
-# via RIVENDELL_HOSTNAME in bootstrap.sh instead for that method.
-rivendell_hostname: "{{ inventory_hostname }}"
+# via RIVOLUTION_HOSTNAME in bootstrap.sh instead for that method.
+rivolution_hostname: "{{ inventory_hostname }}"
 
-# Where to get the Rivendell source from, and which ref to build.
-# Defaults point at a private fork -- if you don't have read access to
-# it, override both with a repo you do have access to (e.g. the public
-# upstream, https://github.com/ElvishArtisan/rivendell.git).
-rivendell_git_repo: "git@github.com:anjeleno/rivendell.git"
-rivendell_git_ref: "v4"
-
-# Build configuration passed to ./configure. Matches the golden-image
-# build: standard global paths, rdxport debug symbols. --disable-docs
-# is requested but not fully honored by docs/stylesheets/Makefile.am
-# (a known upstream autotools gap) -- the docs subdirectory builds
-# regardless, so the DocBook toolchain still needs to be fully
-# functional; see the build role's docbook-vendoring task.
-rivendell_configure_args:
-  - "--prefix=/usr"
-  - "--libdir=/usr/lib"
-  - "--libexecdir=/var/www/rd-bin"
-  - "--sysconfdir=/etc"
-  - "--enable-rdxport-debug"
-  - "--disable-docs"
-
-# Where the docbook-xsl-ns package installs its stylesheets. Needed in
-# two distinct ways during the build: as DOCBOOK_STYLESHEETS, a plain
-# Makefile variable some doc rules reference directly and must be
-# present in the environment whenever make itself runs (not just at
-# autogen/configure time); and as the target of a symlink at
-# helpers/docbook/ inside the source tree, which other doc rules
-# reference via relative paths and which isn't tracked in git.
-rivendell_docbook_stylesheets: /usr/share/xml/docbook/stylesheet/docbook-xsl-ns
+# Where to get the Rivolution source from, and which ref to build.
+# Public by default -- override these only if you're pointing this at
+# your own fork instead.
+rivolution_git_repo: "git@github.com:anjeleno/rivolution.git"
+rivolution_git_ref: "main"
 
 # Kernel module providing your sound hardware. snd_hda_intel matches
 # the Intel HDA device emulated by UTM/most cloud hypervisors. Override
 # per-host for physical hardware with a different audio chipset.
-rivendell_audio_kernel_module: snd_hda_intel
+rivolution_audio_kernel_module: snd_hda_intel
 
 # Optional: path to a private SSH key file (e.g. a read-only GitHub
-# deploy key for rivendell_git_repo above), supplied at runtime --
-# never commit a real value for this. A file path, not the key content
-# itself: passing multi-line PEM content directly as an extra-var value
-# doesn't survive Ansible's whitespace-splitting CLI parsing. Leave
-# blank to skip key setup entirely (e.g. when rivendell_git_repo is
-# public, or the connecting account already has its own git
-# credentials configured).
-rivendell_deploy_key_path: ""
+# deploy key), supplied at runtime -- never commit a real value for
+# this. A file path, not the key content itself: passing multi-line
+# PEM content directly as an extra-var value doesn't survive Ansible's
+# whitespace-splitting CLI parsing. Leave blank to skip key setup
+# entirely -- the default rivolution_git_repo above is public, so this
+# is only needed if you've repointed it at your own private fork.
+rivolution_deploy_key_path: ""

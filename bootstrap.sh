@@ -17,32 +17,44 @@ set -euo pipefail
 # This installer repo itself (safe to leave as-is once published).
 INSTALLER_REPO="https://github.com/anjeleno/rivendell-golden-ansible.git"
 
-# Only needed if you want to override the defaults in group_vars/all.yml.
-RIVENDELL_GIT_REPO=""
-RIVENDELL_GIT_REF=""
+# Only needed if you want to override the defaults in group_vars/all.yml
+# (e.g. to point at your own fork instead of the public rivolution repo).
+RIVOLUTION_GIT_REPO=""
+RIVOLUTION_GIT_REF=""
 
 # This method has no real Ansible inventory (just -i "localhost,"), so
-# rivendell_hostname's default ({{ inventory_hostname }}) would resolve
+# rivolution_hostname's default ({{ inventory_hostname }}) would resolve
 # to the literal string "localhost" and the base role would skip
 # setting it. Defaults to "onair" -- override to name this box something
 # else.
-RIVENDELL_HOSTNAME="onair"
+RIVOLUTION_HOSTNAME="onair"
 
-# Private deploy key for RIVENDELL_GIT_REPO, if it's a private repo.
-# Paste the entire key -- including the BEGIN/END lines -- between the
-# quotes below. Leave empty if the repo is public, or if this machine
-# already has its own working git credentials configured.
-RIVENDELL_DEPLOY_KEY=""
+# Private deploy key for RIVOLUTION_GIT_REPO, only needed if you've set
+# that to a private repo above. Paste the entire key -- including the
+# BEGIN/END lines -- between the quotes below. Leave empty if you're
+# using the public default, or if this machine already has its own
+# working git credentials configured.
+RIVOLUTION_DEPLOY_KEY=""
 # ----------------------------------------------------------------------
 
 apt-get update
 apt-get install -y --no-install-recommends git ansible
 
 extra_vars=()
-[ -n "$RIVENDELL_GIT_REPO" ] && extra_vars+=(-e "rivendell_git_repo=$RIVENDELL_GIT_REPO")
-[ -n "$RIVENDELL_GIT_REF" ] && extra_vars+=(-e "rivendell_git_ref=$RIVENDELL_GIT_REF")
-[ -n "$RIVENDELL_HOSTNAME" ] && extra_vars+=(-e "rivendell_hostname=$RIVENDELL_HOSTNAME")
-if [ -n "$RIVENDELL_DEPLOY_KEY" ]; then
+
+# Temp files created below are tracked here and cleaned up by one
+# combined trap -- calling `trap ... EXIT` more than once replaces the
+# previous handler rather than adding to it, so each secret below
+# appends to this array instead of setting its own trap.
+cleanup_paths=()
+cleanup() { rm -f "${cleanup_paths[@]}"; }
+trap cleanup EXIT
+
+[ -n "$RIVOLUTION_GIT_REPO" ] && extra_vars+=(-e "rivolution_git_repo=$RIVOLUTION_GIT_REPO")
+[ -n "$RIVOLUTION_GIT_REF" ] && extra_vars+=(-e "rivolution_git_ref=$RIVOLUTION_GIT_REF")
+[ -n "$RIVOLUTION_HOSTNAME" ] && extra_vars+=(-e "rivolution_hostname=$RIVOLUTION_HOSTNAME")
+
+if [ -n "$RIVOLUTION_DEPLOY_KEY" ]; then
   # Written to a file rather than passed via -e: Ansible's plain
   # key=value extra-vars parsing splits on whitespace (including
   # newlines) to support multiple pairs in one string, which silently
@@ -50,9 +62,9 @@ if [ -n "$RIVENDELL_DEPLOY_KEY" ]; then
   # no such problem, and never echoes the key into any log.
   deploy_key_path="$(mktemp)"
   chmod 600 "$deploy_key_path"
-  printf '%s\n' "$RIVENDELL_DEPLOY_KEY" > "$deploy_key_path"
-  trap 'rm -f "$deploy_key_path"' EXIT
-  extra_vars+=(-e "rivendell_deploy_key_path=$deploy_key_path")
+  printf '%s\n' "$RIVOLUTION_DEPLOY_KEY" > "$deploy_key_path"
+  cleanup_paths+=("$deploy_key_path")
+  extra_vars+=(-e "rivolution_deploy_key_path=$deploy_key_path")
 fi
 
 ansible-galaxy collection install community.general
