@@ -159,7 +159,20 @@ access" below.
 ## Usage
 
 Pick one of these two methods -- they're alternatives, not sequential
-steps.
+steps. Either way, `./configure.sh` (see below) asks the per-install
+questions once and can drive either path for you, or you can do
+everything by hand as described in each method.
+
+### configure.sh: the interactive front end
+
+`./configure.sh` runs on **your own machine**, never on the target --
+it asks for install mode, build user, advanced mode, and security
+hardening once, then either runs `ansible-playbook` directly against a
+host you give it (Method 1) or writes a fully filled-in
+`bootstrap-generated.sh` for you to paste into a cloud provider's
+startup-script field (Method 2). The target box itself never has to
+answer a prompt -- by the time anything runs unattended, every answer
+is already baked in.
 
 ### Method 1: control node pushes to a target over SSH
 
