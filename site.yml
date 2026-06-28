@@ -1,8 +1,9 @@
 ---
-# Full Rivendell golden-image provisioning, derived from the manual
-# golden-image.md build log. Targets a fresh Ubuntu 24.04 install --
-# Droplet, UTM VM, or physical hardware -- reachable as root (or any
-# sudo-capable account) over SSH, or run locally via ansible-pull.
+# Full Rivolution golden-image provisioning, derived from the manual
+# golden-image.md build log. Targets a fresh Ubuntu 24.04/26.04 or
+# Debian Trixie install -- Droplet, UTM VM, or physical hardware --
+# reachable as root (or any sudo-capable account) over SSH, or run
+# locally via ansible-pull.
 - hosts: all
   become: true
   # Fully unattended (cloud-init/ansible-pull, no TTY) -- without this,
@@ -19,3 +20,4 @@
     - build
     - webserver
     - provision
+    - broadcast_advanced

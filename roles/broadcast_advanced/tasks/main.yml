@@ -1,0 +1,298 @@
+---
+# Everything in this role is skipped entirely unless explicitly opted
+# into -- this is a stopgap until the Rivolution Go dashboard (main
+# repo spec 0008) exists to manage broadcast-tool configuration
+# properly, not a general-purpose configuration tool itself. Deploys a
+# fixed bundle as-is; no per-feature prompts.
+- name: Advanced broadcast configuration
+  when: rivolution_advanced_broadcast_config | bool
+  block:
+    # The seed database imported below is keyed to a Rivendell host
+    # literally named "onair" -- importing it against any other
+    # hostname would leave the custom configuration unable to find its
+    # own host record. Fail fast with a clear message rather than
+    # silently importing data that won't match.
+    - name: Assert the hostname is "onair" (required by the advanced seed data)
+      ansible.builtin.assert:
+        that: rivolution_hostname == 'onair'
+        fail_msg: >-
+          Advanced mode's seed data is keyed to a Rivendell host named
+          "onair", but rivolution_hostname is "{{ rivolution_hostname }}".
+          Set rivolution_hostname: onair (or RIVOLUTION_HOSTNAME="onair"
+          for the bootstrap.sh/ansible-pull method) before enabling
+          rivolution_advanced_broadcast_config.
+        success_msg: "Hostname check passed."
+
+    - name: Create the imports/APPS directory tree
+      ansible.builtin.file:
+        path: "{{ rivolution_home }}/imports/APPS/{{ item }}"
+        state: directory
+        owner: "{{ rivolution_user }}"
+        group: "{{ rivolution_user }}"
+        mode: "0755"
+      loop:
+        - "."
+        - sql
+
+    # --- Icecast: install-time-generated passwords, never static ----
+    - name: Check whether Icecast credentials were already generated
+      ansible.builtin.stat:
+        path: /etc/rivolution-advanced-icecast-provisioned
+      register: rivolution_icecast_provisioned
+
+    - name: Generate Icecast passwords (first run only)
+      ansible.builtin.set_fact:
+        rivolution_icecast_source_password: "{{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
+        rivolution_icecast_relay_password: "{{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
+        rivolution_icecast_admin_password: "{{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
+      no_log: true
+      when: not rivolution_icecast_provisioned.stat.exists
+
+    - name: Deploy the Icecast config (first run only)
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/advanced-config/icecast.xml.j2"
+        dest: /etc/icecast2/icecast.xml
+        owner: root
+        group: icecast
+        mode: "0640"
+      when: not rivolution_icecast_provisioned.stat.exists
+      no_log: true
+
+    - name: Record that Icecast credentials have been generated
+      ansible.builtin.file:
+        path: /etc/rivolution-advanced-icecast-provisioned
+        state: touch
+        mode: "0600"
+      when: not rivolution_icecast_provisioned.stat.exists
+
+    - name: Enable and start Icecast
+      ansible.builtin.systemd:
+        name: icecast2
+        state: started
+        enabled: true
+
+    # --- Seed database: destructive, one-time, backed up first ------
+    - name: Check whether the advanced seed database was already imported
+      ansible.builtin.stat:
+        path: /etc/rivolution-advanced-provisioned
+      register: rivolution_advanced_db_provisioned
+
+    - name: Read the current MySQL password from rd.conf
+      ansible.builtin.command:
+        cmd: awk -F= '/^\[mySQL\]/{f=1;next}/^\[/{f=0}f&&$1=="Password"{print $2}' /etc/rd.conf
+      register: rivolution_mysql_password_lookup
+      changed_when: false
+      no_log: true
+
+    - name: Set the MySQL password fact
+      ansible.builtin.set_fact:
+        rivolution_mysql_password: "{{ rivolution_mysql_password_lookup.stdout }}"
+      no_log: true
+
+    - name: Import the advanced seed database (first run only, destructive)
+      when: not rivolution_advanced_db_provisioned.stat.exists
+      block:
+        - name: Back up the existing database before overwriting it
+          community.mysql.mysql_db:
+            name: Rivendell
+            state: dump
+            target: "/root/rivendell-db-backup-before-advanced-mode-{{ ansible_date_time.iso8601_basic_short }}.sql.gz"
+            login_user: rduser
+            login_password: "{{ rivolution_mysql_password }}"
+          no_log: true
+
+        - name: Import the advanced seed database
+          community.mysql.mysql_db:
+            name: Rivendell
+            state: import
+            target: "{{ playbook_dir }}/advanced-config/Rivolution_v600_378_advanced.sql"
+            login_user: rduser
+            login_password: "{{ rivolution_mysql_password }}"
+          no_log: true
+
+        - name: Record that the advanced seed database has been imported
+          ansible.builtin.file:
+            path: /etc/rivolution-advanced-provisioned
+            state: touch
+            mode: "0644"
+
+    # --- Broadcast-tool configs and automation scripts --------------
+    - name: Deploy static advanced-mode configs and scripts
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/advanced-config/{{ item }}"
+        dest: "{{ rivolution_home }}/imports/APPS/{{ item }}"
+        owner: "{{ rivolution_user }}"
+        group: "{{ rivolution_user }}"
+        mode: "0755"
+      loop:
+        - PROC-ON.xml
+        - radio.liq
+        - add_cron_jobs.sh
+        - autologgen.sh
+        - auto-merge.sh
+        - reconcile-traffic.sh
+        - stl.sh
+        - sql/daily_db_backup.sh
+
+    # The deployed copies above all reference the old hardcoded
+    # /home/rd/imports/APPS path internally (cron entries, stl.sh's
+    # liquidsoap invocation, QjackCtl.conf's patchbay path, etc.) --
+    # one pass fixes every cross-reference at once rather than
+    # special-casing each file's content individually.
+    - name: Fix hardcoded /home/rd/imports/APPS paths for the configured build user
+      ansible.builtin.replace:
+        path: "{{ rivolution_home }}/imports/APPS/{{ item }}"
+        regexp: "/home/rd/imports/APPS"
+        replace: "{{ rivolution_home }}/imports/APPS"
+      loop:
+        - PROC-ON.xml
+        - radio.liq
+        - add_cron_jobs.sh
+        - autologgen.sh
+        - auto-merge.sh
+        - reconcile-traffic.sh
+        - stl.sh
+        - sql/daily_db_backup.sh
+      when: rivolution_user != 'rd'
+
+    - name: Inject the real MySQL password into the nightly backup script
+      ansible.builtin.replace:
+        path: "{{ rivolution_home }}/imports/APPS/sql/daily_db_backup.sh"
+        regexp: "SQL_PASSWORD_GOES_HERE"
+        replace: "{{ rivolution_mysql_password }}"
+      no_log: true
+
+    - name: Add the nightly cron jobs
+      ansible.builtin.cron:
+        name: "{{ item.name }}"
+        minute: "{{ item.minute }}"
+        hour: "0"
+        job: "{{ rivolution_home }}/imports/APPS/{{ item.script }}"
+        user: "{{ rivolution_user }}"
+      loop:
+        - { name: "rivolution daily db backup", minute: "5", script: "sql/daily_db_backup.sh" }
+        - { name: "rivolution autologgen", minute: "15", script: "autologgen.sh" }
+
+    # --- Per-application config files (~/.config, dotfiles) ---------
+    - name: Create config directories
+      ansible.builtin.file:
+        path: "{{ rivolution_home }}/.config/{{ item }}"
+        state: directory
+        owner: "{{ rivolution_user }}"
+        group: "{{ rivolution_user }}"
+        mode: "0755"
+      loop:
+        - vlc
+        - rncbc.org
+
+    - name: Deploy VLC and QjackCtl configs
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/advanced-config/configs/{{ item.src }}"
+        dest: "{{ rivolution_home }}/{{ item.dest }}"
+        owner: "{{ rivolution_user }}"
+        group: "{{ rivolution_user }}"
+        mode: "0644"
+      loop:
+        - { src: vlc-qt-interface.conf, dest: .config/vlc/vlc-qt-interface.conf }
+        - { src: vlcrc, dest: .config/vlc/vlcrc }
+        - { src: QjackCtl.conf, dest: .config/rncbc.org/QjackCtl.conf }
+        - { src: .stereo_tool_gui_jack_64_1030.rc, dest: .stereo_tool_gui_jack_64_1030.rc }
+
+    - name: Fix hardcoded /home/rd/imports/APPS paths in per-application configs
+      ansible.builtin.replace:
+        path: "{{ rivolution_home }}/{{ item }}"
+        regexp: "/home/rd/imports/APPS"
+        replace: "{{ rivolution_home }}/imports/APPS"
+      loop:
+        - .config/rncbc.org/QjackCtl.conf
+        - .config/vlc/vlc-qt-interface.conf
+        - .stereo_tool_gui_jack_64_1030.rc
+      when: rivolution_user != 'rd'
+
+    # --- Stereo Tool: fetched directly from the vendor, never bundled ---
+    # Licensed, proprietary software -- never redistributed by this
+    # repo. Free/unlicensed use is allowed for personal listening (with
+    # occasional popups); broadcast/professional use like this needs a
+    # paid license tied to you personally (usable on up to 3 computers,
+    # valid for life, https://www.thimeo.com/stereo-tool/licenses/).
+    # Without a license, the standalone binary plays an audible beep/
+    # spoken message periodically -- not a time-limited trial, but not
+    # silent either.
+    - name: Display the Stereo Tool licensing disclaimer
+      ansible.builtin.debug:
+        msg:
+          - "Stereo Tool is licensed, proprietary software fetched directly from Thimeo, not redistributed by this installer."
+          - "Free/unlicensed use is permitted for personal listening with occasional popups."
+          - "Broadcast/professional use requires a paid license (https://www.thimeo.com/stereo-tool/licenses/) tied to you personally, usable on up to 3 computers, valid for life."
+          - "Without a license, the standalone binary periodically plays an audible beep or spoken message."
+
+    - name: Download the Stereo Tool JACK binary
+      ansible.builtin.get_url:
+        url: "{{ 'https://download.thimeo.com/stereo_tool_gui_jack_pi2_64' if ansible_architecture == 'aarch64' else 'https://download.thimeo.com/stereo_tool_gui_jack_64_1030' }}"
+        dest: "{{ rivolution_home }}/imports/APPS/stereo_tool_gui_jack_64_1030"
+        owner: "{{ rivolution_user }}"
+        group: "{{ rivolution_user }}"
+        mode: "0755"
+      register: rivolution_stereo_tool_download
+      failed_when: false
+
+    - name: Warn if the Stereo Tool download failed
+      ansible.builtin.debug:
+        msg: >-
+          Stereo Tool download failed -- this can happen if Thimeo's
+          download URLs have changed. Download it manually from
+          https://www.thimeo.com/stereo-tool/download/ and place it at
+          {{ rivolution_home }}/imports/APPS/stereo_tool_gui_jack_64_1030.
+      when: rivolution_stereo_tool_download.failed | default(false)
+
+    # --- Desktop shortcuts (skipped entirely if no desktop was installed) ---
+    - name: Desktop shortcuts
+      when: not rivolution_existing_display_manager.stat.exists | default(true)
+      block:
+        - name: Create the Desktop directory
+          ansible.builtin.file:
+            path: "{{ rivolution_home }}/Desktop"
+            state: directory
+            owner: "{{ rivolution_user }}"
+            group: "{{ rivolution_user }}"
+            mode: "0755"
+
+        - name: Deploy desktop shortcuts
+          ansible.builtin.copy:
+            src: "{{ playbook_dir }}/advanced-config/Shortcuts/{{ item }}"
+            dest: "{{ rivolution_home }}/Desktop/{{ item }}"
+            owner: "{{ rivolution_user }}"
+            group: "{{ rivolution_user }}"
+            mode: "0755"
+          loop:
+            - Create-Cronjobs.desktop
+            - rivendell-rdadmin.desktop
+            - rivendell-rdairplay.desktop
+            - rivendell-rdlibrary.desktop
+            - rivendell-rdlogedit.desktop
+            - rivendell-rdlogmanager.desktop
+            - StereoTool.desktop
+            - STL.desktop
+
+        - name: Fix hardcoded /home/rd/imports/APPS paths in desktop shortcuts
+          ansible.builtin.replace:
+            path: "{{ rivolution_home }}/Desktop/{{ item }}"
+            regexp: "/home/rd/imports/APPS"
+            replace: "{{ rivolution_home }}/imports/APPS"
+          loop:
+            - StereoTool.desktop
+            - STL.desktop
+          when: rivolution_user != 'rd'
+
+    - name: Make all deployed scripts and the Stereo Tool binary executable
+      ansible.builtin.file:
+        path: "{{ rivolution_home }}/imports/APPS/{{ item }}"
+        mode: "0755"
+      loop:
+        - add_cron_jobs.sh
+        - autologgen.sh
+        - auto-merge.sh
+        - reconcile-traffic.sh
+        - stl.sh
+        - sql/daily_db_backup.sh
+        - stereo_tool_gui_jack_64_1030

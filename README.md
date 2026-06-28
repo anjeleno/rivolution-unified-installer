@@ -123,7 +123,7 @@ if [ -n "$RIVOLUTION_REMOTE_MYSQL_PASSWORD" ]; then
 fi
 [ -n "$RIVOLUTION_REMOTE_NFS_HOST" ] && extra_vars+=(-e "rivolution_remote_nfs_host=$RIVOLUTION_REMOTE_NFS_HOST")
 
-ansible-galaxy collection install community.general ansible.posix
+ansible-galaxy collection install community.general ansible.posix community.mysql
 ansible-pull -U "$INSTALLER_REPO" -i "localhost," site.yml "${extra_vars[@]}"
 ```
 
@@ -218,6 +218,30 @@ shapes:
   instead of provisioning either locally. Needs
   `rivolution_remote_mysql_host`/`_user`/`_database`/
   `_password_path` and `rivolution_remote_nfs_host` set.
+
+## Advanced mode
+
+`rivolution_advanced_broadcast_config` (default `false`) deploys a
+fixed bundle of broadcast-tool configuration -- Icecast (with
+install-time-generated passwords), Liquidsoap, VLC, JACK patches,
+Stereo Tool (fetched directly from Thimeo, never bundled here -- see
+the license note printed when this runs), and a seed database -- as a
+stopgap until the Rivolution Go dashboard exists to manage this
+properly. It is **not** a general configuration tool: no per-feature
+prompts, just an on/off switch.
+
+Two hard requirements:
+
+- `rivolution_hostname` must be exactly `onair` -- the seed data is
+  keyed to that host name. The playbook fails fast if it isn't.
+- The first time this runs, it **replaces the existing database**
+  (after an automatic backup to `/root/rivendell-db-backup-before-advanced-mode-*.sql.gz`).
+  Safe to enable later on an already-provisioned host -- it's guarded
+  by its own marker, independent of the base install's.
+
+This software is provided **as-is, with no warranty** -- keep your own
+backup too, not just the automatic one, if the existing database
+matters to you.
 
 ## What's intentionally not automated
 

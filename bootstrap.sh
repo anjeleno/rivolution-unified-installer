@@ -99,5 +99,5 @@ if [ -n "$RIVOLUTION_REMOTE_MYSQL_PASSWORD" ]; then
 fi
 [ -n "$RIVOLUTION_REMOTE_NFS_HOST" ] && extra_vars+=(-e "rivolution_remote_nfs_host=$RIVOLUTION_REMOTE_NFS_HOST")
 
-ansible-galaxy collection install community.general ansible.posix
+ansible-galaxy collection install community.general ansible.posix community.mysql
 ansible-pull -U "$INSTALLER_REPO" -i "localhost," site.yml "${extra_vars[@]}"
