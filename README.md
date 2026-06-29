@@ -203,24 +203,51 @@ startup-script field for a box that doesn't exist yet
 The target box itself never has to answer a prompt -- by the time
 anything runs unattended, every answer is already baked in.
 
+**If you're going to choose Method 2 (local), run `./configure.sh`
+itself as root or with `sudo` from the start** -- it checks for this
+immediately after you pick that method and exits with a clear message
+if you're not, but re-running means answering every question again.
+
 ### Method 1: control node pushes to a target over SSH
 
 For a Droplet, UTM VM, or physical box that's already SSH-reachable as
 root (or any sudo-capable user), run this **from a separate machine**:
 
 1. Add the target to `inventory/hosts.ini`.
-2. `ansible-galaxy install -r requirements.yml`
-3. `ansible-playbook site.yml`
+2. Install the required collections:
+
+```bash
+ansible-galaxy install -r requirements.yml
+```
+
+3. Run the playbook:
+
+```bash
+ansible-playbook site.yml
+```
 
 ### Method 2: run directly on the target, no SSH
 
-If you're already logged into the box (a fresh Droplet, UTM VM, or
-physical box you've SSH'd or console'd into), run this **on that same
-box**, as root or a user with passwordless `sudo` ([`site.yml`](site.yml)
-uses `become: true` throughout):
+This is the manual, by-hand equivalent of choosing "local" in
+[`./configure.sh`](configure.sh) -- not deprecated by it, just the
+non-interactive version. If you're already logged into the box (a
+fresh Droplet, UTM VM, or physical box you've SSH'd or console'd
+into), run this **on that same box**, as root or a user with
+passwordless `sudo` (prefix both commands below with `sudo` if you're
+not already root -- [`site.yml`](site.yml) uses `become: true`
+throughout, which needs one or the other to actually take effect):
 
-1. `ansible-galaxy install -r requirements.yml`
-2. `ansible-playbook -i "localhost," -c local site.yml`
+1. Install the required collections:
+
+```bash
+ansible-galaxy install -r requirements.yml
+```
+
+2. Run the playbook directly against this machine:
+
+```bash
+ansible-playbook -i "localhost," -c local site.yml
+```
 
 `-c local` runs every task as a direct subprocess instead of opening a
 loopback SSH connection to itself -- no need for this account's own

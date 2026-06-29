@@ -68,6 +68,17 @@ method="$(choose "How do you want to provision the target?" "ssh" \
   "local" \
   "bootstrap")"
 
+# Checked immediately, not after the whole prompt flow below -- local
+# mode needs root or passwordless sudo for site.yml's become: true to
+# actually take effect, and finding that out only at the very end
+# (after re-answering every question, including the advanced-mode
+# disclaimer) wastes the time it took to answer them.
+if [ "$method" = "local" ] && [ "$EUID" -ne 0 ] && ! sudo -n true 2>/dev/null; then
+  echo "Error: local mode needs to run as root, or as a user with passwordless sudo (site.yml uses become: true throughout)." >&2
+  echo "Re-run as: sudo ./configure.sh" >&2
+  exit 1
+fi
+
 install_mode="$(choose "Install mode" "standalone" \
   "standalone" \
   "server" \
@@ -161,14 +172,8 @@ elif [ "$method" = "local" ]; then
   # No SSH at all -- ansible_connection=local runs every task as a
   # direct subprocess on this machine instead of opening a loopback SSH
   # session to itself (which would otherwise need this account's own
-  # key already trusted in its own authorized_keys). site.yml's
-  # become: true still needs root or passwordless sudo to actually
-  # take effect.
-  if [ "$EUID" -ne 0 ] && ! sudo -n true 2>/dev/null; then
-    echo "Error: local mode needs to run as root, or as a user with passwordless sudo (site.yml uses become: true throughout)." >&2
-    echo "Re-run as: sudo ./configure.sh" >&2
-    exit 1
-  fi
+  # key already trusted in its own authorized_keys). Root/sudo already
+  # checked immediately after method was chosen, above.
   echo
   echo "Running: ansible-playbook -i \"localhost,\" -c local site.yml ..."
   cd "$SCRIPT_DIR"
