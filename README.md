@@ -378,3 +378,14 @@ from scratch -- so it's guarded by a `/etc/rivolution-installer-provisioned`
 marker file and only ever runs once per host. Delete that marker
 yourself if you genuinely want to wipe and rebuild an existing
 install's database.
+
+One more thing that's deliberately **not** idempotent: if the source
+checkout (`rivolution`, in the build user's home directory) already
+has uncommitted local changes -- a previous manual build, a
+half-finished run, hand edits while debugging -- the build role
+refuses to touch it and fails with a clear message instead of silently
+discarding them. Back up or remove that checkout yourself if there's
+nothing worth keeping in it, or re-run with
+`-e rivolution_build_force_clean=true` (see
+[`group_vars/all.yml`](group_vars/all.yml)) to have it discard those
+changes and clone fresh.
