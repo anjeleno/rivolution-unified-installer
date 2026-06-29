@@ -203,16 +203,17 @@ startup-script field for a box that doesn't exist yet
 The target box itself never has to answer a prompt -- by the time
 anything runs unattended, every answer is already baked in.
 
-**If you're going to choose Method 2 (local), run `./configure.sh`
-itself as root or with `sudo` from the start** -- it checks for this
-immediately after you pick that method and exits with a clear message
-if you're not, but re-running means answering every question again.
-If Ansible itself isn't installed yet, Method 2 installs it
-automatically at that same point (`apt-get install -y ansible`) -- safe
-to do unprompted there, since the target is already guaranteed to be
-Ubuntu/Debian and you're already root. Method 1, which runs on
-whatever your separate control machine happens to be, does not
-auto-install -- see its prerequisite note below.
+If you choose Method 2 (local) and `./configure.sh` isn't already
+running as root, it re-execs itself under `sudo` right at that point
+-- you'll be prompted for your password there, same as running any
+other command with `sudo`, without having to remember to start the
+script with `sudo` yourself or re-answer every question if you forget.
+If Ansible itself isn't installed yet, Method 2 also installs it
+automatically once it's root (`apt-get install -y ansible`) -- safe to
+do unprompted there, since the target is already guaranteed to be
+Ubuntu/Debian. Method 1, which runs on whatever your separate control
+machine happens to be, does neither of these -- see its prerequisite
+note below.
 
 ### Method 1: control node pushes to a target over SSH
 

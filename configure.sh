@@ -1,16 +1,29 @@
 #!/bin/bash
-# Interactive front end for this installer. Runs on YOUR OWN machine,
-# never on the target box itself -- it just asks a handful of
-# questions once, then either runs ansible-playbook directly against a
-# host you're already SSH-reachable to (Method 1), or writes out a
-# fully filled-in bootstrap.sh for you to paste into a cloud
-# provider's startup-script field before a droplet even exists
-# (Method 2). Either way, the target never has to answer a prompt
+# Interactive front end for this installer. Asks a handful of
+# questions once, then either runs ansible-playbook over SSH against a
+# separate host you give it (Method 1: ssh), runs it directly against
+# the box you're already logged into, no SSH (Method 2: local -- if
+# this process isn't already root, it re-execs itself under sudo,
+# which prompts for your password right there), or writes out a fully
+# filled-in bootstrap.sh for you to paste into a cloud provider's
+# startup-script field before a droplet even exists (Method 3:
+# bootstrap). Either way, the target never has to answer a prompt
 # itself -- by the time anything runs unattended, every answer is
 # already baked in.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
+
+# Set by the sudo re-exec below (after Method 2 is chosen by a
+# non-root invocation) so the re-exec'd, now-root process doesn't ask
+# the same question again.
+preset_method=""
+for arg in "$@"; do
+  case "$arg" in
+    --method=*) preset_method="${arg#--method=}" ;;
+  esac
+done
 
 ask() {
   # ask "Prompt text" "default value" -> echoes the answer
@@ -56,37 +69,42 @@ choose() {
 echo "=== Rivolution unified installer setup ==="
 echo
 
-echo "ssh:       push from a separate control machine, over SSH, to a"
-echo "           box that's already running and reachable."
-echo "local:     you're already logged into the target box right now --"
-echo "           run the playbook directly against this machine, no SSH."
-echo "bootstrap: generate a bootstrap.sh to paste into a cloud provider's"
-echo "           startup-script field before the box even exists."
-echo
-method="$(choose "How do you want to provision the target?" "ssh" \
-  "ssh" \
-  "local" \
-  "bootstrap")"
-
-# Checked immediately, not after the whole prompt flow below -- local
-# mode needs root or passwordless sudo for site.yml's become: true to
-# actually take effect, and finding that out only at the very end
-# (after re-answering every question, including the advanced-mode
-# disclaimer) wastes the time it took to answer them.
-if [ "$method" = "local" ] && [ "$EUID" -ne 0 ] && ! sudo -n true 2>/dev/null; then
-  echo "Error: local mode needs to run as root, or as a user with passwordless sudo (site.yml uses become: true throughout)." >&2
-  echo "Re-run as: sudo ./configure.sh" >&2
-  exit 1
+if [ -n "$preset_method" ]; then
+  method="$preset_method"
+else
+  echo "ssh:       push from a separate control machine, over SSH, to a"
+  echo "           box that's already running and reachable."
+  echo "local:     you're already logged into the target box right now --"
+  echo "           run the playbook directly against this machine, no SSH."
+  echo "bootstrap: generate a bootstrap.sh to paste into a cloud provider's"
+  echo "           startup-script field before the box even exists."
+  echo
+  method="$(choose "How do you want to provision the target?" "ssh" \
+    "ssh" \
+    "local" \
+    "bootstrap")"
 fi
 
-# Same fail-fast reasoning as the root check above -- ssh and local
-# both run ansible-galaxy/ansible-playbook directly (bootstrap mode
-# doesn't reach this script at all; its generated script apt-installs
-# ansible itself). A common trap: Ansible installed via
-# 'pip install --user ansible' lands in ~/.local/bin, which is on a
-# normal user's PATH but not root's -- sudo resets PATH (secure_path)
-# and won't see it, even though the same command works fine without
-# sudo as the same user.
+# site.yml's become: true needs root for local mode to actually take
+# effect. Rather than just erroring and telling the user to re-run
+# with sudo (which means re-answering every question from scratch),
+# re-exec this same script under sudo right here -- sudo prompts for
+# the password itself, interactively, exactly like running any other
+# command with sudo. --method=local carries the already-made choice
+# through the re-exec so the now-root process doesn't ask again.
+if [ "$method" = "local" ] && [ "$EUID" -ne 0 ]; then
+  echo
+  echo "Local mode needs root -- re-running this script with sudo (you may be prompted for your password)."
+  exec sudo "$SCRIPT_PATH" --method=local
+fi
+
+# ssh and local both run ansible-galaxy/ansible-playbook directly
+# (bootstrap mode doesn't reach this script at all; its generated
+# script apt-installs ansible itself). A common trap: Ansible
+# installed via 'pip install --user ansible' lands in ~/.local/bin,
+# which is on a normal user's PATH but not root's -- sudo resets PATH
+# (secure_path) and won't see it, even though the same command works
+# fine without sudo as the same user.
 if [ "$method" != "bootstrap" ]; then
   missing=()
   command -v ansible-galaxy >/dev/null 2>&1 || missing+=(ansible-galaxy)
@@ -95,11 +113,11 @@ if [ "$method" != "bootstrap" ]; then
     if [ "$method" = "local" ]; then
       # Safe to auto-install here, unprompted, the same way
       # bootstrap.sh already does unconditionally: local mode only
-      # ever runs as root (checked above) against the target box
-      # itself, which this installer already requires to be Ubuntu/
-      # Debian -- apt is guaranteed to exist. ssh mode runs on
-      # whatever the control machine happens to be (could be macOS,
-      # Fedora, anything), so it stays manual below instead of
+      # ever runs as root (guaranteed by the re-exec above) against
+      # the target box itself, which this installer already requires
+      # to be Ubuntu/Debian -- apt is guaranteed to exist. ssh mode
+      # runs on whatever the control machine happens to be (could be
+      # macOS, Fedora, anything), so it stays manual below instead of
       # assuming apt.
       echo "Ansible not found -- installing it now (apt-get install -y ansible)..."
       apt-get update
