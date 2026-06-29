@@ -49,6 +49,21 @@ RIVOLUTION_REMOTE_MYSQL_USER="rduser"
 RIVOLUTION_REMOTE_MYSQL_DATABASE="Rivendell"
 RIVOLUTION_REMOTE_MYSQL_PASSWORD=""
 RIVOLUTION_REMOTE_NFS_HOST=""
+
+# Set to "true" to enable the advanced broadcast-tool bundle (Icecast/
+# Liquidsoap/VLC/JACK patches/Stereo Tool + a seed database). Requires
+# RIVOLUTION_HOSTNAME above to be exactly "onair" -- the seed data is
+# keyed to that host name -- and is destructive on first run (replaces
+# the existing database, after an automatic backup). See this repo's
+# README "Advanced mode" section before enabling. Leave blank to skip.
+RIVOLUTION_ADVANCED_BROADCAST_CONFIG=""
+
+# Set to "true" to enable the security-hardening bundle (ufw + SSH
+# key-only login, only if a working authorized_keys already exists).
+# Independent of advanced mode above. Leave blank to skip.
+RIVOLUTION_HARDEN_SECURITY=""
+RIVOLUTION_HARDEN_EXTERNAL_IP=""
+RIVOLUTION_HARDEN_LAN_SUBNET=""
 # ----------------------------------------------------------------------
 
 apt-get update
@@ -98,6 +113,10 @@ if [ -n "$RIVOLUTION_REMOTE_MYSQL_PASSWORD" ]; then
   extra_vars+=(-e "rivolution_remote_mysql_password_path=$mysql_password_path")
 fi
 [ -n "$RIVOLUTION_REMOTE_NFS_HOST" ] && extra_vars+=(-e "rivolution_remote_nfs_host=$RIVOLUTION_REMOTE_NFS_HOST")
+[ -n "$RIVOLUTION_ADVANCED_BROADCAST_CONFIG" ] && extra_vars+=(-e "rivolution_advanced_broadcast_config=$RIVOLUTION_ADVANCED_BROADCAST_CONFIG")
+[ -n "$RIVOLUTION_HARDEN_SECURITY" ] && extra_vars+=(-e "rivolution_harden_security=$RIVOLUTION_HARDEN_SECURITY")
+[ -n "$RIVOLUTION_HARDEN_EXTERNAL_IP" ] && extra_vars+=(-e "rivolution_harden_external_ip=$RIVOLUTION_HARDEN_EXTERNAL_IP")
+[ -n "$RIVOLUTION_HARDEN_LAN_SUBNET" ] && extra_vars+=(-e "rivolution_harden_lan_subnet=$RIVOLUTION_HARDEN_LAN_SUBNET")
 
 ansible-galaxy collection install community.general ansible.posix community.mysql
 ansible-pull -U "$INSTALLER_REPO" -i "localhost," site.yml "${extra_vars[@]}"

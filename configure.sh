@@ -56,12 +56,16 @@ choose() {
 echo "=== Rivolution unified installer setup ==="
 echo
 
-echo "ssh:       SSH into a box that's already running and reachable."
+echo "ssh:       push from a separate control machine, over SSH, to a"
+echo "           box that's already running and reachable."
+echo "local:     you're already logged into the target box right now --"
+echo "           run the playbook directly against this machine, no SSH."
 echo "bootstrap: generate a bootstrap.sh to paste into a cloud provider's"
 echo "           startup-script field before the box even exists."
 echo
 method="$(choose "How do you want to provision the target?" "ssh" \
   "ssh" \
+  "local" \
   "bootstrap")"
 
 install_mode="$(choose "Install mode" "standalone" \
@@ -153,6 +157,23 @@ if [ "$method" = "ssh" ]; then
   cd "$SCRIPT_DIR"
   ansible-galaxy collection install -r requirements.yml
   ansible-playbook -i "$target_host," -u "$target_user" site.yml "${extra_vars[@]}"
+elif [ "$method" = "local" ]; then
+  # No SSH at all -- ansible_connection=local runs every task as a
+  # direct subprocess on this machine instead of opening a loopback SSH
+  # session to itself (which would otherwise need this account's own
+  # key already trusted in its own authorized_keys). site.yml's
+  # become: true still needs root or passwordless sudo to actually
+  # take effect.
+  if [ "$EUID" -ne 0 ] && ! sudo -n true 2>/dev/null; then
+    echo "Error: local mode needs to run as root, or as a user with passwordless sudo (site.yml uses become: true throughout)." >&2
+    echo "Re-run as: sudo ./configure.sh" >&2
+    exit 1
+  fi
+  echo
+  echo "Running: ansible-playbook -i \"localhost,\" -c local site.yml ..."
+  cd "$SCRIPT_DIR"
+  ansible-galaxy collection install -r requirements.yml
+  ansible-playbook -i "localhost," -c local site.yml "${extra_vars[@]}"
 else
   out_file="$SCRIPT_DIR/bootstrap-generated.sh"
   {

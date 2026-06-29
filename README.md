@@ -80,6 +80,21 @@ RIVOLUTION_REMOTE_MYSQL_USER="rduser"
 RIVOLUTION_REMOTE_MYSQL_DATABASE="Rivendell"
 RIVOLUTION_REMOTE_MYSQL_PASSWORD=""
 RIVOLUTION_REMOTE_NFS_HOST=""
+
+# Set to "true" to enable the advanced broadcast-tool bundle (Icecast/
+# Liquidsoap/VLC/JACK patches/Stereo Tool + a seed database). Requires
+# RIVOLUTION_HOSTNAME above to be exactly "onair" -- the seed data is
+# keyed to that host name -- and is destructive on first run (replaces
+# the existing database, after an automatic backup). See this repo's
+# README "Advanced mode" section before enabling. Leave blank to skip.
+RIVOLUTION_ADVANCED_BROADCAST_CONFIG=""
+
+# Set to "true" to enable the security-hardening bundle (ufw + SSH
+# key-only login, only if a working authorized_keys already exists).
+# Independent of advanced mode above. Leave blank to skip.
+RIVOLUTION_HARDEN_SECURITY=""
+RIVOLUTION_HARDEN_EXTERNAL_IP=""
+RIVOLUTION_HARDEN_LAN_SUBNET=""
 # ----------------------------------------------------------------------
 
 apt-get update
@@ -122,6 +137,10 @@ if [ -n "$RIVOLUTION_REMOTE_MYSQL_PASSWORD" ]; then
   extra_vars+=(-e "rivolution_remote_mysql_password_path=$mysql_password_path")
 fi
 [ -n "$RIVOLUTION_REMOTE_NFS_HOST" ] && extra_vars+=(-e "rivolution_remote_nfs_host=$RIVOLUTION_REMOTE_NFS_HOST")
+[ -n "$RIVOLUTION_ADVANCED_BROADCAST_CONFIG" ] && extra_vars+=(-e "rivolution_advanced_broadcast_config=$RIVOLUTION_ADVANCED_BROADCAST_CONFIG")
+[ -n "$RIVOLUTION_HARDEN_SECURITY" ] && extra_vars+=(-e "rivolution_harden_security=$RIVOLUTION_HARDEN_SECURITY")
+[ -n "$RIVOLUTION_HARDEN_EXTERNAL_IP" ] && extra_vars+=(-e "rivolution_harden_external_ip=$RIVOLUTION_HARDEN_EXTERNAL_IP")
+[ -n "$RIVOLUTION_HARDEN_LAN_SUBNET" ] && extra_vars+=(-e "rivolution_harden_lan_subnet=$RIVOLUTION_HARDEN_LAN_SUBNET")
 
 ansible-galaxy collection install community.general ansible.posix community.mysql
 ansible-pull -U "$INSTALLER_REPO" -i "localhost," site.yml "${extra_vars[@]}"
@@ -158,32 +177,49 @@ access" below.
 
 ## Usage
 
-Pick one of these two methods -- they're alternatives, not sequential
-steps. Either way, `./configure.sh` (see below) asks the per-install
-questions once and can drive either path for you, or you can do
-everything by hand as described in each method.
+Pick one of these three methods -- they're alternatives, not
+sequential steps. Either way, `./configure.sh` (see below) asks the
+per-install questions once and can drive any of them for you, or you
+can do everything by hand as described in each method.
 
 ### configure.sh: the interactive front end
 
-`./configure.sh` runs on **your own machine**, never on the target --
-it asks for install mode, build user, advanced mode, and security
-hardening once, then either runs `ansible-playbook` directly against a
-host you give it (Method 1) or writes a fully filled-in
-`bootstrap-generated.sh` for you to paste into a cloud provider's
-startup-script field (Method 2). The target box itself never has to
-answer a prompt -- by the time anything runs unattended, every answer
-is already baked in.
+`./configure.sh` asks for install mode, build user, advanced mode, and
+security hardening once, then either runs `ansible-playbook` directly
+against a separate host you give it over SSH (Method 1), runs it
+directly against the box you're already logged into, no SSH at all
+(Method 2 -- this is what you want if you've SSH'd into the target
+yourself and are running `configure.sh` on it directly), or writes a
+fully filled-in `bootstrap-generated.sh` for you to paste into a cloud
+provider's startup-script field for a box that doesn't exist yet
+(Method 3). The target box itself never has to answer a prompt --
+by the time anything runs unattended, every answer is already baked
+in.
 
 ### Method 1: control node pushes to a target over SSH
 
 For a Droplet, UTM VM, or physical box that's already SSH-reachable as
-root (or any sudo-capable user):
+root (or any sudo-capable user), run this **from a separate machine**:
 
 1. Add the target to `inventory/hosts.ini`.
 2. `ansible-galaxy install -r requirements.yml`
 3. `ansible-playbook site.yml`
 
-### Method 2: paste into a Droplet's startup script (no SSH needed)
+### Method 2: run directly on the target, no SSH
+
+If you're already logged into the box (a fresh Droplet, UTM VM, or
+physical box you've SSH'd or console'd into), run this **on that same
+box**, as root or a user with passwordless `sudo` (`site.yml` uses
+`become: true` throughout):
+
+1. `ansible-galaxy install -r requirements.yml`
+2. `ansible-playbook -i "localhost," -c local site.yml`
+
+`-c local` runs every task as a direct subprocess instead of opening a
+loopback SSH connection to itself -- no need for this account's own
+SSH key to already be trusted in its own `authorized_keys`.
+
+### Method 3: paste into a Droplet's startup script (no SSH needed)
 
 `bootstrap.sh` is meant to be pasted directly into DigitalOcean's
 Droplet creation screen (Additional Options -> Startup scripts (Free)),
@@ -197,6 +233,9 @@ overrides, deploy key if needed), then paste the whole script in. You
 do **not** need to touch `inventory/hosts.ini` for this method --
 `bootstrap.sh` passes `-i "localhost,"` explicitly, which overrides
 whatever's (or isn't) in that file. It exists purely for Method 1.
+Method 2 above is the better fit if you're already logged into the box
+and just want to run things interactively instead of pasting a
+pre-filled script.
 
 ## Private repo access
 
