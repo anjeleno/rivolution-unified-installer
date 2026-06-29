@@ -371,21 +371,29 @@ risking a lockout.
 
 ## Re-running this playbook later
 
-Everything except the database/test-tone step is safe to re-run (it'll
-just confirm the existing state and move on). The database step is
-deliberately **not** idempotent -- it drops and rebuilds the schema
-from scratch -- so it's guarded by a `/etc/rivolution-installer-provisioned`
-marker file and only ever runs once per host. Delete that marker
-yourself if you genuinely want to wipe and rebuild an existing
-install's database.
+Most of this is safe to re-run (it'll just confirm the existing state
+and move on). Two steps are guarded by their own marker file instead,
+the same way `roles/desktop` already auto-skips installing a desktop
+that's already there -- re-cloning and recompiling Rivolution from
+scratch (or dropping and rebuilding the database) every single time
+this playbook runs would be wasteful at best and actively destructive
+at worst:
 
-One more thing that's deliberately **not** idempotent: if the source
-checkout (`rivolution`, in the build user's home directory) already
-has uncommitted local changes -- a previous manual build, a
-half-finished run, hand edits while debugging -- the build role
-refuses to touch it and fails with a clear message instead of silently
-discarding them. Back up or remove that checkout yourself if there's
-nothing worth keeping in it, or re-run with
-`-e rivolution_build_force_clean=true` (see
-[`group_vars/all.yml`](group_vars/all.yml)) to have it discard those
-changes and clone fresh.
+- **Build and install**: once `/etc/rivolution-build-provisioned`
+  exists, the clone/configure/compile/install steps are skipped
+  entirely on every later run, even if the source checkout itself was
+  deleted or reset in the meantime. Delete that marker yourself if you
+  genuinely want to force a rebuild (e.g. to pick up a new
+  `rivolution_git_ref`). If you do, and the checkout still exists with
+  uncommitted local changes -- a previous manual build, hand edits
+  while debugging -- the build role refuses to touch it and fails with
+  a clear message instead of silently discarding them; back up or
+  remove that checkout yourself, or re-run with
+  `-e rivolution_build_force_clean=true` (see
+  [`group_vars/all.yml`](group_vars/all.yml)) to have it discard those
+  changes and clone fresh.
+- **Database**: deliberately **not** idempotent on its own -- it drops
+  and rebuilds the schema from scratch -- so it's guarded by a
+  `/etc/rivolution-installer-provisioned` marker file and only ever
+  runs once per host. Delete that marker yourself if you genuinely
+  want to wipe and rebuild an existing install's database.

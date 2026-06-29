@@ -1,80 +1,106 @@
 ---
-- name: Install git
-  ansible.builtin.apt:
-    name: git
-    state: present
+# Same idempotency philosophy as roles/desktop's auto-skip and
+# roles/provision's /etc/rivolution-installer-provisioned marker: once
+# Rivolution is actually built and installed on this host, re-running
+# this playbook (e.g. to apply an unrelated change, or because the
+# source checkout itself got deleted/reset) shouldn't force a full
+# reclone + recompile every time -- that's the same mistake as
+# reinstalling a desktop environment that's already there. Delete this
+# marker yourself if you genuinely want to force a rebuild (e.g. to
+# pick up a new rivolution_git_ref).
+- name: Check whether Rivolution is already built and installed on this host
+  ansible.builtin.stat:
+    path: /etc/rivolution-build-provisioned
+  register: rivolution_build_provisioned
 
-# Detected ahead of the clone task itself so the failure message below
-# is clear and actionable, rather than relying on the git module's own
-# (more cryptic) refusal. rc != 0 covers both "directory doesn't exist
-# yet" and "exists but isn't a git repo at all" -- in either case there
-# are no local changes of the kind this check cares about, so the next
-# task proceeds normally either way.
-- name: Check for local modifications in an existing source checkout
-  become_user: "{{ rivolution_user }}"
-  ansible.builtin.command:
-    cmd: git status --porcelain
-    chdir: "{{ rivolution_home }}/rivolution"
-  register: rivolution_checkout_status
-  changed_when: false
-  failed_when: false
-  when: not rivolution_build_force_clean
+- name: Build and install Rivolution (first run only)
+  when: not rivolution_build_provisioned.stat.exists
+  block:
+    - name: Install git
+      ansible.builtin.apt:
+        name: git
+        state: present
 
-# Refuses to silently discard real work -- see rivolution_build_force_clean
-# in group_vars/all.yml for the explicit, opt-in way to clear this.
-- name: Fail clearly if local modifications would otherwise be discarded
-  ansible.builtin.fail:
-    msg: >-
-      {{ rivolution_home }}/rivolution already exists with uncommitted
-      local changes -- refusing to overwrite them. Back up or remove
-      that directory yourself, or re-run with
-      -e rivolution_build_force_clean=true to discard them and clone
-      fresh.
-  when:
-    - not rivolution_build_force_clean
-    - rivolution_checkout_status.rc is defined
-    - rivolution_checkout_status.rc == 0
-    - rivolution_checkout_status.stdout | trim != ''
+    # Detected ahead of the clone task itself so the failure message
+    # below is clear and actionable, rather than relying on the git
+    # module's own (more cryptic) refusal. rc != 0 covers both
+    # "directory doesn't exist yet" and "exists but isn't a git repo
+    # at all" -- in either case there are no local changes of the kind
+    # this check cares about, so the next task proceeds normally
+    # either way.
+    - name: Check for local modifications in an existing source checkout
+      become_user: "{{ rivolution_user }}"
+      ansible.builtin.command:
+        cmd: git status --porcelain
+        chdir: "{{ rivolution_home }}/rivolution"
+      register: rivolution_checkout_status
+      changed_when: false
+      failed_when: false
+      when: not rivolution_build_force_clean
 
-- name: Clone the Rivolution source tree
-  become_user: "{{ rivolution_user }}"
-  ansible.builtin.git:
-    repo: "{{ rivolution_git_repo }}"
-    dest: "{{ rivolution_home }}/rivolution"
-    version: "{{ rivolution_git_ref }}"
-    accept_hostkey: true
-    force: "{{ rivolution_build_force_clean }}"
+    # Refuses to silently discard real work -- see
+    # rivolution_build_force_clean in group_vars/all.yml for the
+    # explicit, opt-in way to clear this.
+    - name: Fail clearly if local modifications would otherwise be discarded
+      ansible.builtin.fail:
+        msg: >-
+          {{ rivolution_home }}/rivolution already exists with
+          uncommitted local changes -- refusing to overwrite them.
+          Back up or remove that directory yourself, or re-run with
+          -e rivolution_build_force_clean=true to discard them and
+          clone fresh.
+      when:
+        - not rivolution_build_force_clean
+        - rivolution_checkout_status.rc is defined
+        - rivolution_checkout_status.rc == 0
+        - rivolution_checkout_status.stdout | trim != ''
 
-# configure_build.sh (shipped in the source tree) auto-detects the
-# distro and runs both autogen.sh and the real ./configure with the
-# right --prefix/--libdir/--libexecdir/--sysconfdir/MUSICBRAINZ_LIBS
-# for it -- no need to hand-maintain those flags here. configure.ac's
-# own DocBook detection also creates the helpers/docbook stylesheet
-# symlink automatically now, so no manual vendoring step is needed
-# either.
-- name: Run configure_build.sh
-  become_user: "{{ rivolution_user }}"
-  ansible.builtin.command:
-    cmd: ./configure_build.sh
-    chdir: "{{ rivolution_home }}/rivolution"
-    creates: "{{ rivolution_home }}/rivolution/Makefile"
+    - name: Clone the Rivolution source tree
+      become_user: "{{ rivolution_user }}"
+      ansible.builtin.git:
+        repo: "{{ rivolution_git_repo }}"
+        dest: "{{ rivolution_home }}/rivolution"
+        version: "{{ rivolution_git_ref }}"
+        accept_hostkey: true
+        force: "{{ rivolution_build_force_clean }}"
 
-- name: Compile (make -j{{ ansible_facts['processor_vcpus'] | default(2) }})
-  become_user: "{{ rivolution_user }}"
-  ansible.builtin.command:
-    cmd: "make -j{{ ansible_facts['processor_vcpus'] | default(2) }}"
-    chdir: "{{ rivolution_home }}/rivolution"
+    # configure_build.sh (shipped in the source tree) auto-detects the
+    # distro and runs both autogen.sh and the real ./configure with
+    # the right --prefix/--libdir/--libexecdir/--sysconfdir/
+    # MUSICBRAINZ_LIBS for it -- no need to hand-maintain those flags
+    # here. configure.ac's own DocBook detection also creates the
+    # helpers/docbook stylesheet symlink automatically now, so no
+    # manual vendoring step is needed either.
+    - name: Run configure_build.sh
+      become_user: "{{ rivolution_user }}"
+      ansible.builtin.command:
+        cmd: ./configure_build.sh
+        chdir: "{{ rivolution_home }}/rivolution"
+        creates: "{{ rivolution_home }}/rivolution/Makefile"
 
-- name: Install compiled binaries
-  ansible.builtin.command:
-    cmd: make install
-    chdir: "{{ rivolution_home }}/rivolution"
+    - name: Compile (make -j{{ ansible_facts['processor_vcpus'] | default(2) }})
+      become_user: "{{ rivolution_user }}"
+      ansible.builtin.command:
+        cmd: "make -j{{ ansible_facts['processor_vcpus'] | default(2) }}"
+        chdir: "{{ rivolution_home }}/rivolution"
 
-# Required, not optional: without this, every Rivendell binary fails
-# immediately with "error while loading shared libraries" even though
-# the file genuinely exists -- make install doesn't refresh the
-# linker's cache itself.
-- name: Refresh the linker cache
-  ansible.builtin.command:
-    cmd: ldconfig
-  changed_when: false
+    - name: Install compiled binaries
+      ansible.builtin.command:
+        cmd: make install
+        chdir: "{{ rivolution_home }}/rivolution"
+
+    # Required, not optional: without this, every Rivendell binary
+    # fails immediately with "error while loading shared libraries"
+    # even though the file genuinely exists -- make install doesn't
+    # refresh the linker's cache itself.
+    - name: Refresh the linker cache
+      ansible.builtin.command:
+        cmd: ldconfig
+      changed_when: false
+
+- name: Mark this host's Rivolution build as provisioned
+  ansible.builtin.file:
+    path: /etc/rivolution-build-provisioned
+    state: touch
+    mode: "0644"
+  when: not rivolution_build_provisioned.stat.exists
