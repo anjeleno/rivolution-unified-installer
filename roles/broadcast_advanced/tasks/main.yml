@@ -96,7 +96,7 @@
           community.mysql.mysql_db:
             name: Rivendell
             state: dump
-            target: "/root/rivendell-db-backup-before-advanced-mode-{{ ansible_date_time.iso8601_basic_short }}.sql.gz"
+            target: "/root/rivendell-db-backup-before-advanced-mode-{{ ansible_facts['date_time']['iso8601_basic_short'] }}.sql.gz"
             login_user: rduser
             login_password: "{{ rivolution_mysql_password }}"
           no_log: true
@@ -228,7 +228,7 @@
 
     - name: Download the Stereo Tool JACK binary
       ansible.builtin.get_url:
-        url: "{{ 'https://download.thimeo.com/stereo_tool_gui_jack_pi2_64' if ansible_architecture == 'aarch64' else 'https://download.thimeo.com/stereo_tool_gui_jack_64_1030' }}"
+        url: "{{ 'https://download.thimeo.com/stereo_tool_gui_jack_pi2_64' if ansible_facts['architecture'] == 'aarch64' else 'https://download.thimeo.com/stereo_tool_gui_jack_64_1030' }}"
         dest: "{{ rivolution_home }}/imports/APPS/stereo_tool_gui_jack_64_1030"
         owner: "{{ rivolution_user }}"
         group: "{{ rivolution_user }}"

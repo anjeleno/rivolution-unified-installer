@@ -55,7 +55,7 @@
 
     - name: Add the deb-multimedia repo
       ansible.builtin.apt_repository:
-        repo: "deb https://www.deb-multimedia.org {{ ansible_distribution_release }} main non-free"
+        repo: "deb https://www.deb-multimedia.org {{ ansible_facts['distribution_release'] }} main non-free"
         filename: deb-multimedia
         state: present
         update_cache: true
@@ -156,7 +156,7 @@
 # kernel image ships, only relevant on real hardware to begin with.
 - name: Check whether linux-modules-extra is available for this kernel (Ubuntu only)
   ansible.builtin.command:
-    cmd: apt-cache show "linux-modules-extra-{{ ansible_kernel }}"
+    cmd: apt-cache show "linux-modules-extra-{{ ansible_facts['kernel'] }}"
   register: linux_modules_extra_check
   changed_when: false
   failed_when: false
@@ -164,14 +164,14 @@
 
 - name: Install linux-modules-extra for this kernel (Ubuntu only)
   ansible.builtin.apt:
-    name: "linux-modules-extra-{{ ansible_kernel }}"
+    name: "linux-modules-extra-{{ ansible_facts['kernel'] }}"
     state: present
   when: rivolution_target_os == 'ubuntu' and linux_modules_extra_check.rc == 0
 
 - name: Warn that linux-modules-extra isn't available for this kernel (Ubuntu only)
   ansible.builtin.debug:
     msg: >-
-      linux-modules-extra-{{ ansible_kernel }} isn't published in the
+      linux-modules-extra-{{ ansible_facts['kernel'] }} isn't published in the
       configured repos for this exact kernel build -- continuing
       without it. Only matters for extra ALSA/hardware modules beyond
       what the base kernel image already ships.

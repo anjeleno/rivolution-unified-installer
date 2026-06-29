@@ -28,6 +28,15 @@ rivolution_hostname: "{{ inventory_hostname }}"
 rivolution_git_repo: "git@github.com:anjeleno/rivolution.git"
 rivolution_git_ref: "main"
 
+# False by default: if rivolution_home/rivolution already exists with
+# uncommitted local changes (a previous manual build, a half-finished
+# run, hand edits while debugging), roles/build refuses to touch it and
+# fails with a clear message instead of silently discarding them. Set
+# to true (e.g. -e rivolution_build_force_clean=true) only once you've
+# confirmed there's nothing in that checkout worth keeping -- it
+# deletes the local changes and clones fresh.
+rivolution_build_force_clean: false
+
 # Kernel module providing your sound hardware. Left blank by default
 # so roles/desktop auto-detects it (AudioScience HPI vs UTM/cloud
 # hypervisor vs headless vs real ALSA hardware -- see roles/desktop for
@@ -38,9 +47,9 @@ rivolution_audio_kernel_module: ""
 # Auto-detected from the target's own /etc/os-release via Ansible
 # facts -- the OS is already knowable from the box itself, so there's
 # no need to ask. Override explicitly (e.g. via host_vars or -e) only
-# if ansible_distribution doesn't resolve to either name correctly on
-# some future target.
-rivolution_target_os: "{{ 'debian' if ansible_distribution == 'Debian' else 'ubuntu' }}"
+# if ansible_facts['distribution'] doesn't resolve to either name
+# correctly on some future target.
+rivolution_target_os: "{{ 'debian' if ansible_facts['distribution'] == 'Debian' else 'ubuntu' }}"
 
 # standalone: database + audio store local only (default, unchanged
 #   from how this playbook has always behaved).

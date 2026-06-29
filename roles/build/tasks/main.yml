@@ -4,6 +4,38 @@
     name: git
     state: present
 
+# Detected ahead of the clone task itself so the failure message below
+# is clear and actionable, rather than relying on the git module's own
+# (more cryptic) refusal. rc != 0 covers both "directory doesn't exist
+# yet" and "exists but isn't a git repo at all" -- in either case there
+# are no local changes of the kind this check cares about, so the next
+# task proceeds normally either way.
+- name: Check for local modifications in an existing source checkout
+  become_user: "{{ rivolution_user }}"
+  ansible.builtin.command:
+    cmd: git status --porcelain
+    chdir: "{{ rivolution_home }}/rivolution"
+  register: rivolution_checkout_status
+  changed_when: false
+  failed_when: false
+  when: not rivolution_build_force_clean
+
+# Refuses to silently discard real work -- see rivolution_build_force_clean
+# in group_vars/all.yml for the explicit, opt-in way to clear this.
+- name: Fail clearly if local modifications would otherwise be discarded
+  ansible.builtin.fail:
+    msg: >-
+      {{ rivolution_home }}/rivolution already exists with uncommitted
+      local changes -- refusing to overwrite them. Back up or remove
+      that directory yourself, or re-run with
+      -e rivolution_build_force_clean=true to discard them and clone
+      fresh.
+  when:
+    - not rivolution_build_force_clean
+    - rivolution_checkout_status.rc is defined
+    - rivolution_checkout_status.rc == 0
+    - rivolution_checkout_status.stdout | trim != ''
+
 - name: Clone the Rivolution source tree
   become_user: "{{ rivolution_user }}"
   ansible.builtin.git:
@@ -11,6 +43,7 @@
     dest: "{{ rivolution_home }}/rivolution"
     version: "{{ rivolution_git_ref }}"
     accept_hostkey: true
+    force: "{{ rivolution_build_force_clean }}"
 
 # configure_build.sh (shipped in the source tree) auto-detects the
 # distro and runs both autogen.sh and the real ./configure with the
@@ -26,10 +59,10 @@
     chdir: "{{ rivolution_home }}/rivolution"
     creates: "{{ rivolution_home }}/rivolution/Makefile"
 
-- name: Compile (make -j{{ ansible_processor_vcpus | default(2) }})
+- name: Compile (make -j{{ ansible_facts['processor_vcpus'] | default(2) }})
   become_user: "{{ rivolution_user }}"
   ansible.builtin.command:
-    cmd: "make -j{{ ansible_processor_vcpus | default(2) }}"
+    cmd: "make -j{{ ansible_facts['processor_vcpus'] | default(2) }}"
     chdir: "{{ rivolution_home }}/rivolution"
 
 - name: Install compiled binaries
