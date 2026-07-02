@@ -150,11 +150,6 @@ if [ "$install_mode" = "client" ]; then
 fi
 
 echo
-advanced_mode="no"
-if confirm "Enable advanced mode (Icecast/Liquidsoap/VLC/Stereo Tool configs + seed database)?"; then
-  advanced_mode="yes"
-fi
-
 security_hardening="no"
 harden_external_ip="" harden_lan_subnet=""
 if confirm "Enable security hardening (firewall + SSH key-only login)?"; then
@@ -163,36 +158,10 @@ if confirm "Enable security hardening (firewall + SSH key-only login)?"; then
   harden_lan_subnet="$(ask "LAN subnet to allow, e.g. 192.168.1.0/24 (blank to skip)")"
 fi
 
-# Advanced mode's seed data is keyed to a host literally named "onair"
-# -- enforced here too (not just by the playbook's own assertion) so a
-# mismatch is caught before anything runs, not partway through.
 hostname_default="onair"
-if [ "$advanced_mode" = "yes" ]; then
-  echo
-  echo "Advanced mode requires the Rivolution hostname to be exactly 'onair' -- its seed data is keyed to that host name."
-  hostname="$(ask "Rivolution hostname" "$hostname_default")"
-  if [ "$hostname" != "onair" ]; then
-    echo "Error: advanced mode requires hostname 'onair', got '$hostname'." >&2
-    exit 1
-  fi
-else
-  hostname="$(ask "Rivolution hostname" "$hostname_default")"
-fi
-
-if [ "$advanced_mode" = "yes" ]; then
-  echo
-  echo "=== Advanced mode disclaimer ==="
-  echo "This software is provided AS IS, with absolutely no warranty."
-  echo "Advanced mode will REPLACE the existing Rivendell database with a seed dataset on first run."
-  echo "A backup of the existing database is taken automatically first, but make sure you also have your own backup before proceeding if this matters to you."
-  if ! confirm "Continue with advanced mode?"; then
-    echo "Aborted."
-    exit 1
-  fi
-fi
+hostname="$(ask "Rivolution hostname" "$hostname_default")"
 
 extra_vars=(-e "rivolution_install_mode=$install_mode" -e "rivolution_user=$build_user" -e "rivolution_hostname=$hostname")
-[ "$advanced_mode" = "yes" ] && extra_vars+=(-e "rivolution_advanced_broadcast_config=true")
 [ "$security_hardening" = "yes" ] && extra_vars+=(-e "rivolution_harden_security=true")
 [ -n "$harden_external_ip" ] && extra_vars+=(-e "rivolution_harden_external_ip=$harden_external_ip")
 [ -n "$harden_lan_subnet" ] && extra_vars+=(-e "rivolution_harden_lan_subnet=$harden_lan_subnet")
@@ -258,7 +227,6 @@ else
     echo '[ -n "$RIVOLUTION_HOSTNAME" ] && extra_vars+=(-e "rivolution_hostname=$RIVOLUTION_HOSTNAME")'
     echo '[ -n "$RIVOLUTION_INSTALL_MODE" ] && extra_vars+=(-e "rivolution_install_mode=$RIVOLUTION_INSTALL_MODE")'
     echo "extra_vars+=(-e \"rivolution_user=$build_user\")"
-    [ "$advanced_mode" = "yes" ] && echo 'extra_vars+=(-e "rivolution_advanced_broadcast_config=true")'
     [ "$security_hardening" = "yes" ] && echo 'extra_vars+=(-e "rivolution_harden_security=true")'
     [ -n "$harden_external_ip" ] && echo "extra_vars+=(-e \"rivolution_harden_external_ip=$harden_external_ip\")"
     [ -n "$harden_lan_subnet" ] && echo "extra_vars+=(-e \"rivolution_harden_lan_subnet=$harden_lan_subnet\")"

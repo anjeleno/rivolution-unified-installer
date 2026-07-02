@@ -1,7 +1,6 @@
 ---
-# Independent of rivolution_advanced_broadcast_config -- a station may
-# want hardened SSH and a firewall regardless of whether it's running
-# any broadcast tooling at all.
+# A station may want hardened SSH and a firewall regardless of whether
+# it's running any broadcast tooling at all.
 - name: Security hardening
   when: rivolution_harden_security | bool
   block:

@@ -1,7 +1,7 @@
 ---
 # pypad.py's config.readfp() is deprecated/removed in modern Python --
 # a real upstream-source issue on any from-source build, not specific
-# to this playbook or to advanced mode.
+# to this playbook.
 - name: Check whether pypad.py is installed
   ansible.builtin.stat:
     path: /usr/lib/python3/dist-packages/rivendellaudio/pypad.py

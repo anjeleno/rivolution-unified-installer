@@ -83,17 +83,9 @@ RIVOLUTION_REMOTE_MYSQL_DATABASE="Rivendell"
 RIVOLUTION_REMOTE_MYSQL_PASSWORD=""
 RIVOLUTION_REMOTE_NFS_HOST=""
 
-# Set to "true" to enable the advanced broadcast-tool bundle (Icecast/
-# Liquidsoap/VLC/JACK patches/Stereo Tool + a seed database). Requires
-# RIVOLUTION_HOSTNAME above to be exactly "onair" -- the seed data is
-# keyed to that host name -- and is destructive on first run (replaces
-# the existing database, after an automatic backup). See this repo's
-# README "Advanced mode" section before enabling. Leave blank to skip.
-RIVOLUTION_ADVANCED_BROADCAST_CONFIG=""
-
 # Set to "true" to enable the security-hardening bundle (ufw + SSH
 # key-only login, only if a working authorized_keys already exists).
-# Independent of advanced mode above. Leave blank to skip.
+# Leave blank to skip.
 RIVOLUTION_HARDEN_SECURITY=""
 RIVOLUTION_HARDEN_EXTERNAL_IP=""
 RIVOLUTION_HARDEN_LAN_SUBNET=""
@@ -139,7 +131,6 @@ if [ -n "$RIVOLUTION_REMOTE_MYSQL_PASSWORD" ]; then
   extra_vars+=(-e "rivolution_remote_mysql_password_path=$mysql_password_path")
 fi
 [ -n "$RIVOLUTION_REMOTE_NFS_HOST" ] && extra_vars+=(-e "rivolution_remote_nfs_host=$RIVOLUTION_REMOTE_NFS_HOST")
-[ -n "$RIVOLUTION_ADVANCED_BROADCAST_CONFIG" ] && extra_vars+=(-e "rivolution_advanced_broadcast_config=$RIVOLUTION_ADVANCED_BROADCAST_CONFIG")
 [ -n "$RIVOLUTION_HARDEN_SECURITY" ] && extra_vars+=(-e "rivolution_harden_security=$RIVOLUTION_HARDEN_SECURITY")
 [ -n "$RIVOLUTION_HARDEN_EXTERNAL_IP" ] && extra_vars+=(-e "rivolution_harden_external_ip=$RIVOLUTION_HARDEN_EXTERNAL_IP")
 [ -n "$RIVOLUTION_HARDEN_LAN_SUBNET" ] && extra_vars+=(-e "rivolution_harden_lan_subnet=$RIVOLUTION_HARDEN_LAN_SUBNET")
@@ -190,7 +181,7 @@ can do everything by hand as described in each method.
 ### configure.sh: the interactive front end
 
 [`./configure.sh`](configure.sh) asks for install mode, build user,
-advanced mode, and security hardening once, then either runs
+and security hardening once, then either runs
 `ansible-playbook` directly against a separate host you give it over
 SSH ([Method 1](#method-1-control-node-pushes-to-a-target-over-ssh)),
 runs it directly against the box you're already logged into, no SSH at
@@ -322,39 +313,14 @@ shapes:
   `rivolution_remote_mysql_host`/`_user`/`_database`/
   `_password_path` and `rivolution_remote_nfs_host` set.
 
-## Advanced mode
-
-`rivolution_advanced_broadcast_config` (default `false`) deploys a
-fixed bundle of broadcast-tool configuration -- Icecast (with
-install-time-generated passwords), Liquidsoap, VLC, JACK patches,
-Stereo Tool (fetched directly from Thimeo, never bundled here -- see
-the license note printed when this runs), and a seed database -- as a
-stopgap until the Rivolution Go dashboard exists to manage this
-properly. It is **not** a general configuration tool: no per-feature
-prompts, just an on/off switch.
-
-Two hard requirements:
-
-- `rivolution_hostname` must be exactly `onair` -- the seed data is
-  keyed to that host name. The playbook fails fast if it isn't.
-- The first time this runs, it **replaces the existing database**
-  (after an automatic backup to `/root/rivendell-db-backup-before-advanced-mode-*.sql.gz`).
-  Safe to enable later on an already-provisioned host -- it's guarded
-  by its own marker, independent of the base install's.
-
-This software is provided **as-is, with no warranty** -- keep your own
-backup too, not just the automatic one, if the existing database
-matters to you.
-
 ## Security hardening
 
-`rivolution_harden_security` (default `false`), independent of
-advanced mode -- installs `ufw` (allowing Icecast's port, SSH, and the
-optional `rivolution_harden_external_ip`/`rivolution_harden_lan_subnet`),
-then disables SSH password authentication, but only if an
-`authorized_keys` file already exists for the build user. If one
-doesn't exist yet, SSH hardening is skipped with a warning rather than
-risking a lockout.
+`rivolution_harden_security` (default `false`) installs `ufw`
+(allowing Icecast's port, SSH, and the optional
+`rivolution_harden_external_ip`/`rivolution_harden_lan_subnet`), then
+disables SSH password authentication, but only if an `authorized_keys`
+file already exists for the build user. If one doesn't exist yet, SSH
+hardening is skipped with a warning rather than risking a lockout.
 
 ## What's intentionally not automated
 

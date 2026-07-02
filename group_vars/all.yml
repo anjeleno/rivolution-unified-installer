@@ -71,21 +71,12 @@ rivolution_remote_mysql_password_path: ""
 rivolution_remote_mysql_database: "Rivendell"
 rivolution_remote_nfs_host: ""
 
-# Public, no SSH key/auth required, deliberately -- a fixed bundle of
-# broadcast-tool configs (Icecast/Liquidsoap/VLC/JACK/Stereo Tool) and
-# a seed database, as a stopgap until the Rivolution Go dashboard (main
-# repo spec 0008) exists to manage this configuration properly. Off by
-# default. Requires rivolution_hostname to be exactly "onair" -- the
-# seed data is keyed to that host name -- and is destructive (replaces
-# the existing database, after a backup) the first time it runs.
-rivolution_advanced_broadcast_config: false
-
-# Separate from advanced mode above -- a station may want hardened SSH
-# and a firewall independent of whether it's running any broadcast
-# tooling at all. Off by default. Opens 8000/tcp (Icecast) and SSH,
-# plus the optional external IP/LAN subnet below if set, then disables
-# SSH password authentication -- but only if a key-based login path
-# already exists, checked automatically rather than just asked.
+# A station may want hardened SSH and a firewall independent of
+# whether it's running any broadcast tooling at all. Off by default.
+# Opens 8000/tcp (Icecast) and SSH, plus the optional external IP/LAN
+# subnet below if set, then disables SSH password authentication --
+# but only if a key-based login path already exists, checked
+# automatically rather than just asked.
 rivolution_harden_security: false
 rivolution_harden_external_ip: ""
 rivolution_harden_lan_subnet: ""
