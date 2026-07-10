@@ -17,11 +17,12 @@
 # Independent of which Rivolution ref this playbook builds (see
 # rivolution_git_ref in group_vars/all.yml) -- these packages don't
 # depend on the Rivolution source tree itself.
-- name: Install bundled broadcast tool suite (Icecast, Liquidsoap, VLC)
+- name: Install bundled broadcast tool suite (Icecast, ffmpeg, VLC)
   ansible.builtin.apt:
     name:
       - icecast2
-      - liquidsoap
+      - ffmpeg
+      - fdkaac
       - vlc
       - vlc-plugin-jack
     state: present
