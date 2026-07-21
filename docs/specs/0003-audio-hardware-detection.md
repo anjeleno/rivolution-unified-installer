@@ -2,6 +2,16 @@
 
 **Date:** 2026-06-23
 
+**Extended 2026-07-20 by
+[0004-deb-based-provisioning.md](0004-deb-based-provisioning.md)**:
+the kernel-module detection described here (`roles/desktop`) is
+unchanged and still the mechanism in use. 0004 adds a second, related
+piece on top — actually setting Rivolution's own `AUDIO_CARDS.DRIVER`
+to JACK using these same detection results (`roles/audio_provisioning`),
+closing the separate, longer-standing gap where nothing did that
+automatically even when the kernel module was already correctly
+detected.
+
 ## Goal
 
 Replace the single hardcoded `rivendell_audio_kernel_module` default

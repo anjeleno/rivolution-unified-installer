@@ -2,6 +2,15 @@
 
 **Date:** 2026-06-20
 
+**Partially superseded 2026-07-20 by
+[0004-deb-based-provisioning.md](0004-deb-based-provisioning.md)**:
+the three modes and their variable names described here are unchanged,
+but the *mechanism* isn't — server/client topology switching now goes
+through the dashboard's own `/mode` page (driven over HTTP from
+Ansible), not the NFS/`fstab` tasks this spec originally called for.
+Kept as historical record of the original design; see 0004 for what's
+actually implemented today.
+
 ## Goal
 
 This playbook currently only produces one shape of install: everything
