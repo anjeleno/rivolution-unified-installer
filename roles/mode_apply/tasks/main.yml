@@ -57,6 +57,19 @@
     # like the human-driven path, so it's deliberately not run on every
     # playbook re-run -- only asserts the mode; if it's already applied,
     # this just re-confirms the same intent.
+    #
+    # timeout is generous, not left at ansible.builtin.uri's 30s
+    # default -- server mode alone does a real apt install of
+    # nfs-kernel-server (not part of the .deb's own Depends, so this
+    # can be a genuine first-time package fetch+install), a MariaDB
+    # bind-address change + restart, bind-mounting the export tree,
+    # rewriting /etc/exports, exportfs -ra, and a full rivendell.service
+    # restart -- all real, bounded work (see
+    # rivapi/store/mode_apply.go's ModeServer branch in the main repo),
+    # but easily well past 30s cumulatively. Confirmed live 2026-07-21:
+    # a 30s timeout hit "Connection failure: timed out" on a real
+    # server-mode run, not any kind of hang -- rivapi was still working
+    # when Ansible gave up waiting.
     - name: Apply the install mode
       ansible.builtin.uri:
         url: http://127.0.0.1:8080/mode/apply
@@ -73,4 +86,5 @@
         headers:
           Cookie: "{{ rivolution_dashboard_login.set_cookie.split(';') | first }}"
         status_code: [200]
+        timeout: 300
       no_log: true
