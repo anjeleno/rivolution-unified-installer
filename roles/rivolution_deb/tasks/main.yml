@@ -35,7 +35,7 @@
       register: rivolution_pinned_release
       when: rivolution_release_tag | length > 0
 
-    - name: Record the resolved release tag
+    - name: Record the resolved release tag and asset list
       ansible.builtin.set_fact:
         rivolution_resolved_tag: >-
           {{
@@ -43,57 +43,85 @@
              if rivolution_release_tag | length > 0
              else rivolution_latest_release.json.tag_name)
           }}
+        rivolution_release_assets: >-
+          {{
+            (rivolution_pinned_release.json.assets
+             if rivolution_release_tag | length > 0
+             else rivolution_latest_release.json.assets)
+          }}
 
-    # amd64 splits further by target Ubuntu release: the primary build
-    # targets 26.04, with a second -noble-suffixed build for 24.04 (see
-    # the main repo's CHANGELOG, 2026-07-03). arm64 has no such split.
-    # Debian isn't handled here at all -- no Debian-built .deb exists
-    # yet (tracked in the main repo's BACKLOG.md); rivolution_install_method:
-    # source is the only way to target Debian today.
-    - name: Determine the release asset name for this host
+    # Matched by pattern against the release's real, actual asset
+    # names -- not reconstructed from the tag. Confirmed live
+    # 2026-07-20 (a real ansible-pull run) that the tag's own '-' form
+    # ('~' substituted with '-', so tags can be valid git refs) is NOT
+    # what GitHub's uploaded filenames use: those come from the
+    # package's own internal version string instead, with GitHub's
+    # *separate* automatic '~'->'.' substitution applied to that
+    # ('6.0.0~rc1-2' -> '6.0.0.rc1-2') -- two different substitutions
+    # of the same character, so building the filename from the tag
+    # string looked right but matched nothing real. Matching against
+    # the API's own asset list sidesteps needing to replicate either
+    # substitution correctly.
+    #
+    # '^rivolution_' (literal underscore) excludes every sub-package
+    # (rivolution-dev_/-importers_/-webapi_/etc. all have a hyphen,
+    # not an underscore, right after "rivolution"). The amd64/
+    # amd64-noble patterns are anchored at the end so 'amd64.deb'
+    # doesn't also match 'amd64-noble.deb'. Debian isn't matched by any
+    # pattern here -- no Debian-built .deb exists yet (tracked in the
+    # main repo's BACKLOG.md); rivolution_install_method: source is the
+    # only way to target Debian today.
+    - name: Determine the release asset pattern for this host
       ansible.builtin.set_fact:
-        rivolution_asset_name: >-
+        rivolution_asset_pattern: >-
           {%- if ansible_facts['architecture'] == 'aarch64' -%}
-          rivolution_{{ rivolution_resolved_tag[1:] }}_arm64.deb
+          ^rivolution_.*_arm64\.deb$
           {%- elif ansible_facts['distribution_version'] is version('26.04', '>=') -%}
-          rivolution_{{ rivolution_resolved_tag[1:] }}_amd64.deb
+          ^rivolution_.*_amd64\.deb$
           {%- else -%}
-          rivolution_{{ rivolution_resolved_tag[1:] }}_amd64-noble.deb
+          ^rivolution_.*_amd64-noble\.deb$
           {%- endif -%}
 
+    - name: Find matching release assets
+      ansible.builtin.set_fact:
+        rivolution_matched_assets: >-
+          {{
+            rivolution_release_assets
+            | selectattr('name', 'match', rivolution_asset_pattern)
+            | list
+          }}
+
+    # Checked as a list length, not a truthiness/is-none check on a
+    # single templated value -- avoids depending on whether this
+    # ansible-core version preserves None as a native type through
+    # set_fact versus stringifying it, which varies by version and
+    # isn't worth relying on either way.
     - name: Fail clearly if this host's architecture/OS has no matching release asset
       ansible.builtin.fail:
         msg: >-
           No release asset found for {{ ansible_facts['architecture'] }}/
           {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}
-          in release {{ rivolution_resolved_tag }} (looked for
-          {{ rivolution_asset_name }}). Debian targets in particular have
-          no .deb release yet -- use -e rivolution_install_method=source
+          in release {{ rivolution_resolved_tag }} (pattern
+          {{ rivolution_asset_pattern }}). Debian targets in particular
+          have no .deb release yet -- use -e rivolution_install_method=source
           instead, or check
           https://github.com/anjeleno/rivolution/releases/tag/{{ rivolution_resolved_tag }}
           for what's actually published.
-      when: >-
-        rivolution_asset_name not in
-        ((rivolution_pinned_release.json.assets
-          if rivolution_release_tag | length > 0
-          else rivolution_latest_release.json.assets) | map(attribute='name') | list)
+      when: rivolution_matched_assets | length == 0
 
-    # GitHub silently renames '~' to '.' in uploaded asset filenames
-    # (the package's own internal version string keeps the '~', which
-    # matters for Debian version ordering -- see the main repo's
-    # ARCHITECTURE.md) -- rivolution_resolved_tag is already the '-'
-    # form (git tags can't contain '~' either), and rivolution_asset_name
-    # above is built without ever using '~', so this already matches
-    # what GitHub actually serves without any extra substitution needed.
+    - name: Record the matched asset
+      ansible.builtin.set_fact:
+        rivolution_matched_asset: "{{ rivolution_matched_assets | first }}"
+
     - name: Download the release asset
       ansible.builtin.get_url:
-        url: "https://github.com/anjeleno/rivolution/releases/download/{{ rivolution_resolved_tag }}/{{ rivolution_asset_name }}"
-        dest: "/tmp/{{ rivolution_asset_name }}"
+        url: "{{ rivolution_matched_asset.browser_download_url }}"
+        dest: "/tmp/{{ rivolution_matched_asset.name }}"
         mode: "0644"
 
     - name: Record the downloaded .deb's path
       ansible.builtin.set_fact:
-        rivolution_deb_path: "/tmp/{{ rivolution_asset_name }}"
+        rivolution_deb_path: "/tmp/{{ rivolution_matched_asset.name }}"
 
 # Naturally idempotent: apt no-ops if the exact same package version is
 # already installed. postinst does everything else from here --
