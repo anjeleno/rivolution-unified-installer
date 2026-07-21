@@ -16,6 +16,22 @@
 - name: Set the JACK audio driver
   when: rivolution_use_jack_driver | bool
   block:
+    # community.mysql.mysql_query prefers PyMySQL and only falls back
+    # to the MySQLdb/mysqlclient connector (with a deprecation warning,
+    # to be removed entirely in collection version 5.0.0) when PyMySQL
+    # isn't importable. Without this, the module was finding
+    # python3-mysqldb -- a real Rivendell dependency (PyPAD scripts
+    # import MySQLdb directly, see debian/control.src's own Depends),
+    # not something this role installs -- and silently depending on an
+    # unrelated package happening to be present is exactly the kind of
+    # implicit assumption that's bitten this project before. Installed
+    # unconditionally, not gated by install method, since this role
+    # itself always needs it regardless of how Rivolution got installed.
+    - name: Ensure PyMySQL is available for community.mysql
+      ansible.builtin.apt:
+        name: python3-pymysql
+        state: present
+
     - name: Read /etc/rd.conf
       ansible.builtin.slurp:
         src: /etc/rd.conf
