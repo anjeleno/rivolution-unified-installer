@@ -17,8 +17,20 @@ set -euo pipefail
 # This installer repo itself (safe to leave as-is once published).
 INSTALLER_REPO="https://github.com/anjeleno/rivolution-unified-installer.git"
 
-# Only needed if you want to override the defaults in group_vars/all.yml
-# (e.g. to point at your own fork instead of the public rivolution repo).
+# deb (default): download and apt-install the matching release .deb.
+# source: clone RIVOLUTION_GIT_REPO/_REF below and build a local .deb
+#   from it instead -- see group_vars/all.yml for why this doesn't cost
+#   much extra to keep working alongside the deb path.
+RIVOLUTION_INSTALL_METHOD=""
+
+# Only consulted when RIVOLUTION_INSTALL_METHOD=deb. Blank (default)
+# installs the latest published release; set to an exact tag (e.g.
+# "v6.0.0-rc1-2") to pin one instead.
+RIVOLUTION_RELEASE_TAG=""
+
+# Only consulted when RIVOLUTION_INSTALL_METHOD=source. Override the
+# defaults in group_vars/all.yml (e.g. to point at your own fork
+# instead of the public rivolution repo).
 RIVOLUTION_GIT_REPO=""
 RIVOLUTION_GIT_REF=""
 
@@ -56,6 +68,12 @@ RIVOLUTION_REMOTE_NFS_HOST=""
 RIVOLUTION_HARDEN_SECURITY=""
 RIVOLUTION_HARDEN_EXTERNAL_IP=""
 RIVOLUTION_HARDEN_LAN_SUBNET=""
+
+# Set to "true" to install and enable (but not start) tailscaled.
+# Leave RIVOLUTION_TAILSCALE_AUTHKEY blank to activate it yourself
+# later; set it to a real auth key to activate immediately.
+RIVOLUTION_TAILSCALE_ENABLED=""
+RIVOLUTION_TAILSCALE_AUTHKEY=""
 # ----------------------------------------------------------------------
 
 apt-get update
@@ -71,6 +89,8 @@ cleanup_paths=()
 cleanup() { rm -f "${cleanup_paths[@]}"; }
 trap cleanup EXIT
 
+[ -n "$RIVOLUTION_INSTALL_METHOD" ] && extra_vars+=(-e "rivolution_install_method=$RIVOLUTION_INSTALL_METHOD")
+[ -n "$RIVOLUTION_RELEASE_TAG" ] && extra_vars+=(-e "rivolution_release_tag=$RIVOLUTION_RELEASE_TAG")
 [ -n "$RIVOLUTION_GIT_REPO" ] && extra_vars+=(-e "rivolution_git_repo=$RIVOLUTION_GIT_REPO")
 [ -n "$RIVOLUTION_GIT_REF" ] && extra_vars+=(-e "rivolution_git_ref=$RIVOLUTION_GIT_REF")
 [ -n "$RIVOLUTION_HOSTNAME" ] && extra_vars+=(-e "rivolution_hostname=$RIVOLUTION_HOSTNAME")
@@ -108,6 +128,15 @@ fi
 [ -n "$RIVOLUTION_HARDEN_SECURITY" ] && extra_vars+=(-e "rivolution_harden_security=$RIVOLUTION_HARDEN_SECURITY")
 [ -n "$RIVOLUTION_HARDEN_EXTERNAL_IP" ] && extra_vars+=(-e "rivolution_harden_external_ip=$RIVOLUTION_HARDEN_EXTERNAL_IP")
 [ -n "$RIVOLUTION_HARDEN_LAN_SUBNET" ] && extra_vars+=(-e "rivolution_harden_lan_subnet=$RIVOLUTION_HARDEN_LAN_SUBNET")
+[ -n "$RIVOLUTION_TAILSCALE_ENABLED" ] && extra_vars+=(-e "rivolution_tailscale_enabled=$RIVOLUTION_TAILSCALE_ENABLED")
+if [ -n "$RIVOLUTION_TAILSCALE_AUTHKEY" ]; then
+  # Same file-path treatment as the MySQL/deploy-key secrets above.
+  tailscale_authkey_path="$(mktemp)"
+  chmod 600 "$tailscale_authkey_path"
+  printf '%s\n' "$RIVOLUTION_TAILSCALE_AUTHKEY" > "$tailscale_authkey_path"
+  cleanup_paths+=("$tailscale_authkey_path")
+  extra_vars+=(-e "rivolution_tailscale_authkey_path=$tailscale_authkey_path")
+fi
 
 ansible-galaxy collection install community.general ansible.posix community.mysql
 ansible-pull -U "$INSTALLER_REPO" -i "localhost," site.yml "${extra_vars[@]}"

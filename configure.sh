@@ -131,12 +131,21 @@ if [ "$method" != "bootstrap" ]; then
   fi
 fi
 
+install_method="$(choose "Install Rivolution by..." "deb" \
+  "deb" \
+  "source")"
+
+release_tag=""
+if [ "$install_method" = "deb" ]; then
+  release_tag="$(ask "Release tag to install (blank = latest)")"
+fi
+
 install_mode="$(choose "Install mode" "standalone" \
   "standalone" \
   "server" \
   "client")"
 
-build_user="$(ask "Build user" "rd")"
+build_user="$(ask "Install/build user" "rd")"
 
 remote_mysql_host="" remote_mysql_user="" remote_mysql_database="" remote_mysql_password="" remote_nfs_host=""
 if [ "$install_mode" = "client" ]; then
@@ -158,26 +167,47 @@ if confirm "Enable security hardening (firewall + SSH key-only login)?"; then
   harden_lan_subnet="$(ask "LAN subnet to allow, e.g. 192.168.1.0/24 (blank to skip)")"
 fi
 
+echo
+tailscale_enabled="no"
+tailscale_authkey=""
+if confirm "Enable Tailscale (installs + enables tailscaled; doesn't auto-connect without a key)?"; then
+  tailscale_enabled="yes"
+  read -r -s -p "Tailscale auth key (blank to just install + enable, activate later): " tailscale_authkey; echo
+fi
+
 hostname_default="onair"
 hostname="$(ask "Rivolution hostname" "$hostname_default")"
 
-extra_vars=(-e "rivolution_install_mode=$install_mode" -e "rivolution_user=$build_user" -e "rivolution_hostname=$hostname")
+extra_vars=(-e "rivolution_install_method=$install_method" -e "rivolution_install_mode=$install_mode" -e "rivolution_user=$build_user" -e "rivolution_hostname=$hostname")
+[ -n "$release_tag" ] && extra_vars+=(-e "rivolution_release_tag=$release_tag")
 [ "$security_hardening" = "yes" ] && extra_vars+=(-e "rivolution_harden_security=true")
 [ -n "$harden_external_ip" ] && extra_vars+=(-e "rivolution_harden_external_ip=$harden_external_ip")
 [ -n "$harden_lan_subnet" ] && extra_vars+=(-e "rivolution_harden_lan_subnet=$harden_lan_subnet")
+[ "$tailscale_enabled" = "yes" ] && extra_vars+=(-e "rivolution_tailscale_enabled=true")
 [ -n "$remote_mysql_host" ] && extra_vars+=(-e "rivolution_remote_mysql_host=$remote_mysql_host")
 [ -n "$remote_mysql_user" ] && extra_vars+=(-e "rivolution_remote_mysql_user=$remote_mysql_user")
 [ -n "$remote_mysql_database" ] && extra_vars+=(-e "rivolution_remote_mysql_database=$remote_mysql_database")
 [ -n "$remote_nfs_host" ] && extra_vars+=(-e "rivolution_remote_nfs_host=$remote_nfs_host")
 
-remote_mysql_password_path=""
-cleanup() { [ -n "$remote_mysql_password_path" ] && rm -f "$remote_mysql_password_path"; return 0; }
+
+remote_mysql_password_path="" tailscale_authkey_path=""
+cleanup() {
+  [ -n "$remote_mysql_password_path" ] && rm -f "$remote_mysql_password_path"
+  [ -n "$tailscale_authkey_path" ] && rm -f "$tailscale_authkey_path"
+  return 0
+}
 trap cleanup EXIT
 if [ -n "$remote_mysql_password" ]; then
   remote_mysql_password_path="$(mktemp)"
   chmod 600 "$remote_mysql_password_path"
   printf '%s\n' "$remote_mysql_password" > "$remote_mysql_password_path"
   extra_vars+=(-e "rivolution_remote_mysql_password_path=$remote_mysql_password_path")
+fi
+if [ -n "$tailscale_authkey" ]; then
+  tailscale_authkey_path="$(mktemp)"
+  chmod 600 "$tailscale_authkey_path"
+  printf '%s\n' "$tailscale_authkey" > "$tailscale_authkey_path"
+  extra_vars+=(-e "rivolution_tailscale_authkey_path=$tailscale_authkey_path")
 fi
 
 if [ "$method" = "ssh" ]; then
@@ -210,12 +240,15 @@ else
     echo
     echo 'INSTALLER_REPO="https://github.com/anjeleno/rivolution-unified-installer.git"'
     echo "RIVOLUTION_HOSTNAME=\"$hostname\""
+    echo "RIVOLUTION_INSTALL_METHOD=\"$install_method\""
+    echo "RIVOLUTION_RELEASE_TAG=\"$release_tag\""
     echo "RIVOLUTION_INSTALL_MODE=\"$install_mode\""
     echo "RIVOLUTION_REMOTE_MYSQL_HOST=\"$remote_mysql_host\""
     echo "RIVOLUTION_REMOTE_MYSQL_USER=\"$remote_mysql_user\""
     echo "RIVOLUTION_REMOTE_MYSQL_DATABASE=\"$remote_mysql_database\""
     echo "RIVOLUTION_REMOTE_MYSQL_PASSWORD=\"$remote_mysql_password\""
     echo "RIVOLUTION_REMOTE_NFS_HOST=\"$remote_nfs_host\""
+    echo "RIVOLUTION_TAILSCALE_AUTHKEY=\"$tailscale_authkey\""
     echo
     echo 'apt-get update'
     echo 'apt-get install -y --no-install-recommends git ansible'
@@ -225,11 +258,14 @@ else
     echo 'cleanup() { rm -f "${cleanup_paths[@]}"; }'
     echo 'trap cleanup EXIT'
     echo '[ -n "$RIVOLUTION_HOSTNAME" ] && extra_vars+=(-e "rivolution_hostname=$RIVOLUTION_HOSTNAME")'
+    echo '[ -n "$RIVOLUTION_INSTALL_METHOD" ] && extra_vars+=(-e "rivolution_install_method=$RIVOLUTION_INSTALL_METHOD")'
+    echo '[ -n "$RIVOLUTION_RELEASE_TAG" ] && extra_vars+=(-e "rivolution_release_tag=$RIVOLUTION_RELEASE_TAG")'
     echo '[ -n "$RIVOLUTION_INSTALL_MODE" ] && extra_vars+=(-e "rivolution_install_mode=$RIVOLUTION_INSTALL_MODE")'
     echo "extra_vars+=(-e \"rivolution_user=$build_user\")"
     [ "$security_hardening" = "yes" ] && echo 'extra_vars+=(-e "rivolution_harden_security=true")'
     [ -n "$harden_external_ip" ] && echo "extra_vars+=(-e \"rivolution_harden_external_ip=$harden_external_ip\")"
     [ -n "$harden_lan_subnet" ] && echo "extra_vars+=(-e \"rivolution_harden_lan_subnet=$harden_lan_subnet\")"
+    [ "$tailscale_enabled" = "yes" ] && echo 'extra_vars+=(-e "rivolution_tailscale_enabled=true")'
     echo '[ -n "$RIVOLUTION_REMOTE_MYSQL_HOST" ] && extra_vars+=(-e "rivolution_remote_mysql_host=$RIVOLUTION_REMOTE_MYSQL_HOST")'
     echo '[ -n "$RIVOLUTION_REMOTE_MYSQL_USER" ] && extra_vars+=(-e "rivolution_remote_mysql_user=$RIVOLUTION_REMOTE_MYSQL_USER")'
     echo '[ -n "$RIVOLUTION_REMOTE_MYSQL_DATABASE" ] && extra_vars+=(-e "rivolution_remote_mysql_database=$RIVOLUTION_REMOTE_MYSQL_DATABASE")'
@@ -241,6 +277,13 @@ else
     echo '  extra_vars+=(-e "rivolution_remote_mysql_password_path=$mysql_password_path")'
     echo 'fi'
     echo '[ -n "$RIVOLUTION_REMOTE_NFS_HOST" ] && extra_vars+=(-e "rivolution_remote_nfs_host=$RIVOLUTION_REMOTE_NFS_HOST")'
+    echo 'if [ -n "$RIVOLUTION_TAILSCALE_AUTHKEY" ]; then'
+    echo '  tailscale_authkey_path="$(mktemp)"'
+    echo '  chmod 600 "$tailscale_authkey_path"'
+    echo '  printf '"'"'%s\n'"'"' "$RIVOLUTION_TAILSCALE_AUTHKEY" > "$tailscale_authkey_path"'
+    echo '  cleanup_paths+=("$tailscale_authkey_path")'
+    echo '  extra_vars+=(-e "rivolution_tailscale_authkey_path=$tailscale_authkey_path")'
+    echo 'fi'
     echo
     echo 'ansible-galaxy collection install community.general ansible.posix community.mysql'
     echo 'ansible-pull -U "$INSTALLER_REPO" -i "localhost," site.yml "${extra_vars[@]}"'
