@@ -1,0 +1,53 @@
+---
+# Closes the gap tracked in the main repo's BACKLOG.md ("Fresh installs
+# never provision a working audio card"): nothing in debian/postinst
+# sets AUDIO_CARDS.DRIVER, so a truly fresh install's card 0 is
+# undriven until someone opens RDAlsaConfig and deselects every listed
+# device by hand. roles/desktop already gathers the real/virtual
+# hardware facts this fork needs to make that same call automatically
+# -- this role applies it directly to the database. See docs/specs/0004.
+#
+# If/when a general, non-Ansible fix lands in postinst itself (the
+# BACKLOG.md entry this closes for Ansible-provisioned installs only),
+# revisit this role -- it may become fully redundant, or need to shrink
+# to whatever gap remains. Don't let this quietly duplicate postinst
+# once postinst can do it too.
+
+- name: Set the JACK audio driver
+  when: rivolution_use_jack_driver | bool
+  block:
+    - name: Read /etc/rd.conf
+      ansible.builtin.slurp:
+        src: /etc/rd.conf
+      register: rivolution_rdconf_raw
+
+    - name: Extract MySQL connection details from rd.conf
+      ansible.builtin.set_fact:
+        rivolution_db_host: "{{ rivolution_rdconf_raw.content | b64decode | regex_findall('(?m)^\\[mySQL\\]\\n(?:.*\\n)*?Hostname=(.*)$') | first }}"
+        rivolution_db_user: "{{ rivolution_rdconf_raw.content | b64decode | regex_findall('(?m)^\\[mySQL\\]\\n(?:.*\\n)*?Loginname=(.*)$') | first }}"
+        rivolution_db_password: "{{ rivolution_rdconf_raw.content | b64decode | regex_findall('(?m)^\\[mySQL\\]\\n(?:.*\\n)*?Password=(.*)$') | first }}"
+        rivolution_db_name: "{{ rivolution_rdconf_raw.content | b64decode | regex_findall('(?m)^\\[mySQL\\]\\n(?:.*\\n)*?Database=(.*)$') | first }}"
+      no_log: true
+
+    # AUDIO_CARDS.STATION_NAME matches this station's own RDStation
+    # identity, which defaults (lib/rdconfig.cpp, no explicit
+    # [Identity] StationName= override in rd.conf-sample) to the
+    # machine's own hostname -- exactly rivolution_hostname, already
+    # applied by roles/base before this role ever runs.
+    #
+    # DRIVER=2 is RDStation::AudioDriver's Jack value (the enum is
+    # {None=0, Hpi=1, Jack=2, Alsa=3} -- lib/rdstation.h). Card 0 only:
+    # this fork's caed only ever registers one JACK card per process
+    # (see the main repo's ARCHITECTURE.md, "caed audio driver layer").
+    - name: Set AUDIO_CARDS.DRIVER to Jack for card 0
+      community.mysql.mysql_query:
+        login_host: "{{ rivolution_db_host }}"
+        login_user: "{{ rivolution_db_user }}"
+        login_password: "{{ rivolution_db_password }}"
+        login_db: "{{ rivolution_db_name }}"
+        query: >-
+          UPDATE AUDIO_CARDS SET DRIVER = 2
+          WHERE STATION_NAME = %s AND CARD_NUMBER = 0
+        positional_args:
+          - "{{ rivolution_hostname }}"
+      no_log: true

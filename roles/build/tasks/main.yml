@@ -1,20 +1,24 @@
 ---
-# Same idempotency philosophy as roles/desktop's auto-skip and
-# roles/provision's /etc/rivolution-installer-provisioned marker: once
-# Rivolution is actually built and installed on this host, re-running
-# this playbook (e.g. to apply an unrelated change, or because the
-# source checkout itself got deleted/reset) shouldn't force a full
-# reclone + recompile every time -- that's the same mistake as
-# reinstalling a desktop environment that's already there. Delete this
-# marker yourself if you genuinely want to force a rebuild (e.g. to
-# pick up a new rivolution_git_ref).
-- name: Check whether Rivolution is already built and installed on this host
+# Only runs under rivolution_install_method: source. Builds a real
+# local .deb from a fresh git checkout (dpkg-buildpackage, via the main
+# repo's own scripts/rebuild-deb.sh) instead of `make install`-ing
+# directly -- the resulting file gets handed to roles/rivolution_deb,
+# which installs it through the exact same `apt install <path>` step
+# the download path uses. This is deliberate: it means debian/postinst
+# -- the one place broadcast/PipeWire/rivapi provisioning is actually
+# maintained -- runs identically regardless of install method, instead
+# of this role trying to replicate that provisioning a second time in
+# Ansible. See docs/specs/0004 for the full reasoning.
+- name: Check whether Rivolution has already been built locally on this host
   ansible.builtin.stat:
     path: /etc/rivolution-build-provisioned
   register: rivolution_build_provisioned
+  when: rivolution_install_method == 'source'
 
-- name: Build and install Rivolution (first run only)
-  when: not rivolution_build_provisioned.stat.exists
+- name: Build a local .deb from source (first run only)
+  when:
+    - rivolution_install_method == 'source'
+    - not rivolution_build_provisioned.stat.exists
   block:
     - name: Install git
       ansible.builtin.apt:
@@ -64,43 +68,53 @@
         accept_hostkey: true
         force: "{{ rivolution_build_force_clean }}"
 
-    # configure_build.sh (shipped in the source tree) auto-detects the
-    # distro and runs both autogen.sh and the real ./configure with
-    # the right --prefix/--libdir/--libexecdir/--sysconfdir/
-    # MUSICBRAINZ_LIBS for it -- no need to hand-maintain those flags
-    # here. configure.ac's own DocBook detection also creates the
-    # helpers/docbook stylesheet symlink automatically now, so no
-    # manual vendoring step is needed either.
-    - name: Run configure_build.sh
+    # --no-bump builds whatever Debian revision is already committed in
+    # debian/changelog.src/control.src as-is, without minting a new
+    # one -- the same flag the main repo's own x64 CI workflow uses,
+    # for the same reason: this is building an existing, already-
+    # versioned checkout, not authoring a new release. Produces
+    # rivolution_<version>_<arch>.deb (plus sub-package .debs) one
+    # level above the checkout, i.e. directly in rivolution_home.
+    - name: Build the .deb package (dpkg-buildpackage via rebuild-deb.sh)
       become_user: "{{ rivolution_user }}"
       ansible.builtin.command:
-        cmd: ./configure_build.sh
-        chdir: "{{ rivolution_home }}/rivolution"
-        creates: "{{ rivolution_home }}/rivolution/Makefile"
-
-    - name: Compile (make -j{{ ansible_facts['processor_vcpus'] | default(2) }})
-      become_user: "{{ rivolution_user }}"
-      ansible.builtin.command:
-        cmd: "make -j{{ ansible_facts['processor_vcpus'] | default(2) }}"
+        cmd: scripts/rebuild-deb.sh --no-bump
         chdir: "{{ rivolution_home }}/rivolution"
 
-    - name: Install compiled binaries
-      ansible.builtin.command:
-        cmd: make install
-        chdir: "{{ rivolution_home }}/rivolution"
-
-    # Required, not optional: without this, every Rivendell binary
-    # fails immediately with "error while loading shared libraries"
-    # even though the file genuinely exists -- make install doesn't
-    # refresh the linker's cache itself.
-    - name: Refresh the linker cache
-      ansible.builtin.command:
-        cmd: ldconfig
-      changed_when: false
-
-- name: Mark this host's Rivolution build as provisioned
+- name: Mark this host's local build as provisioned
   ansible.builtin.file:
     path: /etc/rivolution-build-provisioned
     state: touch
     mode: "0644"
-  when: not rivolution_build_provisioned.stat.exists
+  when:
+    - rivolution_install_method == 'source'
+    - not rivolution_build_provisioned.stat.exists
+
+# Deliberately outside the "first run only" block above: on a re-run
+# (marker already present, nothing rebuilt this time) roles/rivolution_deb
+# still needs to know where the .deb from the *previous* run landed.
+# rivolution_*.deb (literal underscore) matches only the core package --
+# rivolution-dev_/-importers_/-webapi_/etc. sub-packages all have a
+# hyphen, not an underscore, right after "rivolution", so this glob
+# can't accidentally pick one of those up instead.
+- name: Locate the built core package
+  ansible.builtin.find:
+    paths: "{{ rivolution_home }}"
+    patterns: "rivolution_*.deb"
+  register: rivolution_built_deb
+  when: rivolution_install_method == 'source'
+
+- name: Fail clearly if no built .deb can be found
+  ansible.builtin.fail:
+    msg: >-
+      No rivolution_*.deb found in {{ rivolution_home }} -- if this is
+      the first run, check scripts/rebuild-deb.sh's output above; if
+      it's a re-run, the file from the previous build may have been
+      moved or deleted. Delete /etc/rivolution-build-provisioned to
+      force a fresh build.
+  when: rivolution_install_method == 'source' and rivolution_built_deb.matched == 0
+
+- name: Record the built .deb's path for roles/rivolution_deb
+  ansible.builtin.set_fact:
+    rivolution_local_deb_path: "{{ (rivolution_built_deb.files | sort(attribute='mtime') | last).path }}"
+  when: rivolution_install_method == 'source'

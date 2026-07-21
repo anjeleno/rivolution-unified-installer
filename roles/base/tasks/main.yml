@@ -17,6 +17,11 @@
     line: "127.0.1.1\t{{ rivolution_hostname }}"
   when: rivolution_hostname != "localhost"
 
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ rivolution_timezone }}"
+  when: rivolution_timezone | length > 0
+
 # Matches the manual walkthrough in rivolution.wiki's Build-From-Source
 # guide -- dpkg-reconfigure's debconf prompt is interactive by design,
 # but site.yml already sets DEBIAN_FRONTEND=noninteractive, so this
@@ -27,7 +32,7 @@
     cmd: timedatectl set-ntp yes
   changed_when: false
 
-- name: Create the unprivileged build/desktop user
+- name: Create the unprivileged install/desktop user
   ansible.builtin.user:
     name: "{{ rivolution_user }}"
     groups: sudo
@@ -38,10 +43,11 @@
 # deb-multimedia.org provides the non-free codec packages
 # (libmp3lame-dev/libtwolame-dev/etc.) that Ubuntu ships directly via
 # universe/multiverse but Debian's free-software policy excludes from
-# its own main repos. Must run before the package list below, which
-# depends on it for the Debian target.
-- name: Add the deb-multimedia repo (Debian only)
-  when: rivolution_target_os == 'debian'
+# its own main repos. Only needed under rivolution_install_method:
+# source -- the .deb path never compiles anything, so it never needs
+# these -dev packages at all.
+- name: Add the deb-multimedia repo (Debian, source install method only)
+  when: rivolution_target_os == 'debian' and rivolution_install_method == 'source'
   block:
     - name: Download the deb-multimedia keyring package
       ansible.builtin.get_url:
@@ -60,11 +66,15 @@
         state: present
         update_cache: true
 
-# Reconciled directly against rivolution.wiki's Build-From-Source
-# guide -- verified working on a real DigitalOcean droplet (Ubuntu
-# 24.04). Qt6, not Qt5 -- libqt5webkit5-dev has no Qt6 equivalent at
-# all, replaced by qt6-webengine-dev.
-- name: Install build dependencies
+# Only needed to compile Rivolution itself -- the .deb path (default)
+# gets every one of these as a transitive apt Depends automatically
+# when roles/rivolution_deb installs the package, so it never needs
+# this list at all. Reconciled against rivolution.wiki's
+# Build-From-Source guide, which is the canonical maintained source for
+# this list -- re-check there if this ever needs updating. Qt6, not
+# Qt5 -- libqt5webkit5-dev has no Qt6 equivalent at all, replaced by
+# qt6-webengine-dev.
+- name: Install build dependencies (source install method only)
   ansible.builtin.apt:
     name:
       - git
@@ -134,15 +144,16 @@
       - pbuilder
       - apt-file
     state: present
+  when: rivolution_install_method == 'source'
 
 # ubuntu-dev-tools is literally Ubuntu-branded -- no Debian equivalent
 # at all (pbuilder itself, already installed above, is what the build
-# actually needs).
-- name: Install ubuntu-dev-tools (Ubuntu only)
+# actually needs). Only needed to compile from source.
+- name: Install ubuntu-dev-tools (Ubuntu, source install method only)
   ansible.builtin.apt:
     name: ubuntu-dev-tools
     state: present
-  when: rivolution_target_os == 'ubuntu'
+  when: rivolution_target_os == 'ubuntu' and rivolution_install_method == 'source'
 
 # linux-modules-extra-<kernel> also doesn't exist on Debian (its extra
 # audio/hardware kernel modules ship in the base linux-image package
@@ -154,6 +165,8 @@
 # missing optional extras package can't block the rest of this role --
 # this is just additional ALSA/hardware modules beyond what the base
 # kernel image ships, only relevant on real hardware to begin with.
+# Runs regardless of install method -- this is about kernel/hardware
+# support, not about building Rivolution.
 - name: Check whether linux-modules-extra is available for this kernel (Ubuntu only)
   ansible.builtin.command:
     cmd: apt-cache show "linux-modules-extra-{{ ansible_facts['kernel'] }}"

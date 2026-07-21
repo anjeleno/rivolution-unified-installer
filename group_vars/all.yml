@@ -1,9 +1,9 @@
 ---
-# Unprivileged account that owns the source checkout, does the actual
-# compile, and runs the desktop session (xrdp/MATE). Created if it
-# doesn't already exist. Anything that must run as root (useradd,
-# make install, systemctl) does so explicitly in the roles below --
-# Rivendell's own build system refuses to be compiled as root.
+# Unprivileged account that owns the install, runs the desktop session
+# (xrdp/MATE), and (rivolution_install_method: source only) does the
+# actual compile. Created if it doesn't already exist. Anything that
+# must run as root (useradd, apt, systemctl) does so explicitly in the
+# roles below.
 #
 # Defaults to 'rd' -- the standard account name used throughout Fred
 # Gleason's own Rivendell installation tutorials, kept here so installs
@@ -22,12 +22,35 @@ rivolution_home: "/home/{{ rivolution_user }}"
 # via RIVOLUTION_HOSTNAME in bootstrap.sh instead for that method.
 rivolution_hostname: "{{ inventory_hostname }}"
 
-# Where to get the Rivolution source from, and which ref to build.
-# HTTPS, not SSH -- anjeleno/rivolution is public, so this clones
-# anonymously with no key needed at all. Only override these (and
-# switch to an SSH/git@ URL plus a deploy key, see "Private repo
-# access" in the README) if you're pointing this at your own private
-# fork instead.
+# Optional: sets the system timezone (e.g. "America/Los_Angeles",
+# "Etc/UTC"). Blank skips this entirely -- leaves whatever the base
+# image/cloud provider already configured.
+rivolution_timezone: ""
+
+# deb (default): download and apt-install the matching release .deb
+#   from GitHub Releases -- the fast path, and the one that gets every
+#   postinst fix automatically as the main repo ships them.
+# source: build a real local .deb from a git checkout (dpkg-buildpackage),
+#   then install that through the identical apt step. Not a separate
+#   provisioning path -- postinst runs exactly the same way either way,
+#   so choosing "source" only changes where the .deb comes from, not
+#   what happens after it's installed. Useful for building from a
+#   private fork/unreleased branch, or a target OS/arch with no
+#   published release asset yet (see rivolution_release_* below).
+rivolution_install_method: deb
+
+# Only consulted when rivolution_install_method == "deb". Blank (the
+# default) resolves to the latest published release via GitHub's own
+# /releases/latest API. Set to an exact tag (e.g. "v6.0.0-rc1-2") to
+# pin a specific release instead.
+rivolution_release_tag: ""
+
+# Only consulted when rivolution_install_method == "source". Where to
+# clone from and which ref to build. HTTPS, not SSH -- anjeleno/rivolution
+# is public, so this clones anonymously with no key needed at all. Only
+# override these (and switch to an SSH/git@ URL plus a deploy key, see
+# "Private repo access" in the README) if you're pointing this at your
+# own private fork instead.
 rivolution_git_repo: "https://github.com/anjeleno/rivolution.git"
 rivolution_git_ref: "main"
 
@@ -37,7 +60,8 @@ rivolution_git_ref: "main"
 # fails with a clear message instead of silently discarding them. Set
 # to true (e.g. -e rivolution_build_force_clean=true) only once you've
 # confirmed there's nothing in that checkout worth keeping -- it
-# deletes the local changes and clones fresh.
+# deletes the local changes and clones fresh. Only consulted under
+# rivolution_install_method: source.
 rivolution_build_force_clean: false
 
 # Kernel module providing your sound hardware. Left blank by default
@@ -54,29 +78,52 @@ rivolution_audio_kernel_module: ""
 # correctly on some future target.
 rivolution_target_os: "{{ 'debian' if ansible_facts['distribution'] == 'Debian' else 'ubuntu' }}"
 
-# standalone: database + audio store local only (default, unchanged
-#   from how this playbook has always behaved).
+# standalone (default): database + audio store local only.
 # server: standalone, plus the database and audio store exposed to
-#   other Rivendell systems over the network (NFS export, wider DB
-#   grant).
-# client: only the Rivendell application itself -- no local database,
+#   other Rivolution systems over the network.
+# client: only the Rivolution application itself -- no local database,
 #   no local audio store -- pointed at a remote MySQL/MariaDB host and
 #   a remote NFS-mounted audio store instead.
+#
+# Applied via roles/mode_apply, which drives the dashboard's own
+# /mode page through its HTTP endpoint (the same mechanism a human
+# clicking through /mode uses) rather than re-implementing NFS/fstab
+# topology switching a second time in Ansible -- see docs/specs/0004
+# for why.
 rivolution_install_mode: standalone
 
-# Only consulted when rivolution_install_mode == client.
+# Only consulted when rivolution_install_mode != standalone.
 rivolution_remote_mysql_host: ""
 rivolution_remote_mysql_user: "rduser"
 rivolution_remote_mysql_password_path: ""
 rivolution_remote_mysql_database: "Rivendell"
 rivolution_remote_nfs_host: ""
 
+# Opt-in Tailscale provisioning (spec 0014's installer-role half). Off
+# by default. When enabled, installs the tailscale package and enables
+# (but does not start) tailscaled -- activation happens separately,
+# either via rivolution_tailscale_authkey below or later through the
+# dashboard's own Network page once that exists (see BACKLOG.md).
+rivolution_tailscale_enabled: false
+
+# Only consulted when rivolution_tailscale_enabled is true. A file
+# path, not the key content itself -- same reasoning as
+# rivolution_remote_mysql_password_path below: keeps a real secret out
+# of `ps aux` output and Ansible's own logging, which a direct -e value
+# would end up in. Leave blank to install + enable tailscaled without
+# activating it -- you (or a future dashboard Network page) can run
+# `tailscale up` yourself later.
+rivolution_tailscale_authkey_path: ""
+
 # A station may want hardened SSH and a firewall independent of
 # whether it's running any broadcast tooling at all. Off by default.
-# Opens 8000/tcp (Icecast) and SSH, plus the optional external IP/LAN
-# subnet below if set, then disables SSH password authentication --
-# but only if a key-based login path already exists, checked
-# automatically rather than just asked.
+# Opens Icecast's configured port and SSH, plus the optional external
+# IP/LAN subnet below if set, then disables SSH password authentication
+# -- but only if a key-based login path already exists, checked
+# automatically rather than just asked. Deliberately does not open
+# rivapi's dashboard port or Stereo Tool's web UI port -- Tailscale
+# (above) is the intended remote-access path for those; see
+# docs/specs/0004.
 rivolution_harden_security: false
 rivolution_harden_external_ip: ""
 rivolution_harden_lan_subnet: ""
@@ -87,5 +134,6 @@ rivolution_harden_lan_subnet: ""
 # PEM content directly as an extra-var value doesn't survive Ansible's
 # whitespace-splitting CLI parsing. Leave blank to skip key setup
 # entirely -- the default rivolution_git_repo above is public, so this
-# is only needed if you've repointed it at your own private fork.
+# is only needed under rivolution_install_method: source, pointed at
+# your own private fork.
 rivolution_deploy_key_path: ""

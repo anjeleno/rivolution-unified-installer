@@ -1,9 +1,10 @@
 ---
-# Full Rivolution golden-image provisioning, derived from the manual
-# golden-image.md build log. Targets a fresh Ubuntu 24.04/26.04 or
-# Debian Trixie install -- Droplet, UTM VM, or physical hardware --
-# reachable as root (or any sudo-capable account) over SSH, or run
-# locally via ansible-pull.
+# Full Rivolution provisioning, derived from the manual golden-image
+# build log. Targets a fresh Ubuntu 24.04/26.04 install -- Droplet, UTM
+# VM, or physical hardware -- reachable as root (or any sudo-capable
+# account) over SSH, or run locally via ansible-pull. Debian Trixie is
+# only reachable via rivolution_install_method: source (no Debian-built
+# .deb release exists yet -- see the main repo's BACKLOG.md).
 - hosts: all
   become: true
   # Fully unattended (cloud-init/ansible-pull, no TTY) -- without this,
@@ -13,13 +14,19 @@
     DEBIAN_FRONTEND: noninteractive
   roles:
     - base
-    - broadcast_tools
     - desktop
-    - database
+    # source method only -- builds a local .deb from a git checkout, a
+    # no-op under the default deb method.
     - deploy_key
     - build
-    - webserver
-    - provision
+    # Installs a .deb either way (downloaded, or the one roles/build
+    # just produced) -- debian/postinst does essentially all real
+    # provisioning from here (database, systemd units, sudoers, udev,
+    # .asoundrc, Apache, setuid helpers).
+    - rivolution_deb
+    - audio_provisioning
+    - mode_apply
+    - tailscale
     # Runs last -- may disable SSH password auth, so everything else
     # should already be done before access could become more
     # restricted.

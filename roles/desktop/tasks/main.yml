@@ -54,12 +54,14 @@
         state: restarted
         enabled: true
 
-    - name: Symlink root's Xauthority to the build user's (fixes Qt6/XCB errors for root-run Rivendell tools under xrdp)
-      ansible.builtin.file:
-        src: "{{ rivolution_home }}/.Xauthority"
-        dest: /root/.Xauthority
-        state: link
-        force: true
+# root's .Xauthority symlink (fixes "sudo rdalsaconfig"/"rddbconfig"
+# X11/xcb errors) used to be a task here, scoped to the xrdp-install
+# block above. Moved to debian/postinst in the main repo instead --
+# confirmed 2026-07-20 that Ubuntu's stock PAM stack has no pam_xauth
+# module at all, so this is needed on *every* install (physical
+# hardware included, not just xrdp/virtual ones) and for every install
+# path (.deb-only installs never touched by this playbook included),
+# not something this installer alone should own. See docs/specs/0004.
 
 # Detection order (only consulted when rivolution_audio_kernel_module
 # is left blank -- an explicit override always wins):
@@ -112,6 +114,27 @@
       {%- elif (rivolution_asound_cards.stdout | default('')) is search('no soundcards') -%}
       snd-dummy
       {%- endif -%}
+
+# Consumed by roles/audio_provisioning, which runs after Rivolution's
+# database exists. True whenever detection actually ran (no explicit
+# rivolution_audio_kernel_module override -- an explicit override means
+# an operator already made a deliberate driver choice, which this
+# shouldn't second-guess with a database write) and didn't find HPI
+# hardware -- real HPI cards want their own dedicated driver, not JACK.
+# Every other outcome (virtualized, headless with no cards, or genuine
+# ALSA hardware the kernel auto-detected) still resolves to true: this
+# fork routes audio through JACK/PipeWire as its actual operational
+# model regardless of whether real ALSA hardware happens to be present
+# (see the main repo's ARCHITECTURE.md "caed audio driver layer" and
+# today's BACKLOG.md finding -- confirmed live that even a real-hardware
+# box gets its card deselected in RDAlsaConfig to select JACK).
+- name: Determine whether this station should use the JACK driver
+  ansible.builtin.set_fact:
+    rivolution_use_jack_driver: >-
+      {{
+        (rivolution_audio_kernel_module | length == 0)
+        and not (rivolution_hpi_detected.rc is defined and rivolution_hpi_detected.rc == 0)
+      }}
 
 - name: Load the audio kernel module now
   ansible.builtin.modprobe:

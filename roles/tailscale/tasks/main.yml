@@ -1,0 +1,74 @@
+---
+# Installer half of the main repo's docs/specs/0014-tailscale-integration.md.
+# Opt-in, off by default. Installs and enables tailscaled but does not
+# start/activate it unless rivolution_tailscale_authkey is set -- the
+# dashboard's own Network page (spec 0014's other half) is the intended
+# long-term activation path, but doesn't exist yet (tracked in the main
+# repo's BACKLOG.md as part of the rc1-3 candidate sweep). Installing
+# this role now is harmless either way: nothing downstream needs it
+# yet, and it means the installer is ready the moment that page lands.
+
+- name: Provision Tailscale
+  when: rivolution_tailscale_enabled | bool
+  block:
+    - name: Install prerequisites for adding the Tailscale apt repo
+      ansible.builtin.apt:
+        name:
+          - curl
+          - gnupg
+        state: present
+
+    - name: Add the Tailscale apt signing key
+      ansible.builtin.get_url:
+        url: "https://pkgs.tailscale.com/stable/{{ rivolution_target_os }}/{{ ansible_facts['distribution_release'] }}.noarmor.gpg"
+        dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+        mode: "0644"
+
+    - name: Add the Tailscale apt repo
+      ansible.builtin.get_url:
+        url: "https://pkgs.tailscale.com/stable/{{ rivolution_target_os }}/{{ ansible_facts['distribution_release'] }}.tailscale-keyring.list"
+        dest: /etc/apt/sources.list.d/tailscale.list
+        mode: "0644"
+      register: rivolution_tailscale_repo
+
+    - name: Update apt cache after adding the Tailscale repo
+      ansible.builtin.apt:
+        update_cache: true
+      when: rivolution_tailscale_repo is changed
+
+    - name: Install Tailscale
+      ansible.builtin.apt:
+        name: tailscale
+        state: present
+
+    # Enabled, not started -- activation (tailscale up) is a deliberate
+    # operator/dashboard action, not something provisioning should do
+    # on its own unless an auth key was explicitly supplied below.
+    - name: Enable tailscaled
+      ansible.builtin.systemd:
+        name: tailscaled
+        enabled: true
+
+    # Matches spec 0014's exact three commands -- the identical grant
+    # the (not yet built) dashboard Network page will need once it
+    # exists, so this doesn't need revisiting when that lands.
+    - name: Grant the install/service account sudo access to Tailscale commands
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/rivolution-tailscale
+        content: |
+          {{ rivolution_user }} ALL=(root) NOPASSWD: /usr/bin/tailscale up *, /usr/bin/tailscale cert *, /usr/bin/tailscale status
+        validate: "visudo -cf %s"
+        mode: "0440"
+
+    - name: Read the Tailscale auth key from its file
+      ansible.builtin.set_fact:
+        rivolution_tailscale_authkey: "{{ lookup('file', rivolution_tailscale_authkey_path) }}"
+      when: rivolution_tailscale_authkey_path | length > 0
+      no_log: true
+
+    - name: Activate Tailscale with the provided auth key
+      ansible.builtin.command:
+        cmd: "tailscale up --authkey={{ rivolution_tailscale_authkey }}"
+      when: rivolution_tailscale_authkey_path | length > 0
+      no_log: true
+      changed_when: true

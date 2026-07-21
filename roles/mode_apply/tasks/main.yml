@@ -1,0 +1,76 @@
+---
+# Applies rivolution_install_mode (server/client) through the
+# dashboard's own /mode page, driven over HTTP instead of a second,
+# from-scratch NFS/fstab/MariaDB-bind-address implementation in
+# Ansible -- replaces the old roles/database, whose client-mode NFS
+# mount never landed in fstab reliably and was never root-caused (see
+# docs/specs/0004). standalone (the default) needs nothing here --
+# debian/postinst already provisions a working standalone database on
+# its own.
+
+- name: Apply install mode via the dashboard
+  when: rivolution_install_mode != 'standalone'
+  block:
+    - name: Wait for the rivapi dashboard to be reachable
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 8080
+        timeout: 60
+
+    - name: Read /etc/rd.conf
+      ansible.builtin.slurp:
+        src: /etc/rd.conf
+      register: rivolution_rdconf_raw
+
+    # rivapi's dashboard login checks this value directly (see the main
+    # repo's rivapi/auth/auth.go, CheckDashboardPassword) -- it doubles
+    # as both the dashboard login password and /mode's own
+    # re-authentication gate, not a separate secret.
+    - name: Extract the dashboard JWT secret from rd.conf
+      ansible.builtin.set_fact:
+        rivolution_dashboard_secret: "{{ rivolution_rdconf_raw.content | b64decode | regex_findall('(?m)^\\[dashboard\\]\\n(?:.*\\n)*?JwtSecret=(.*)$') | first }}"
+      no_log: true
+
+    - name: Read the remote MySQL password from its file
+      ansible.builtin.set_fact:
+        rivolution_remote_mysql_password: "{{ lookup('file', rivolution_remote_mysql_password_path) }}"
+      when: rivolution_remote_mysql_password_path | length > 0
+      no_log: true
+
+    - name: Log in to the dashboard
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/login
+        method: POST
+        body_format: form-urlencoded
+        body:
+          username: admin
+          password: "{{ rivolution_dashboard_secret }}"
+        status_code: [303]
+      register: rivolution_dashboard_login
+      no_log: true
+
+    # POST /mode/apply (rivapi/dashboard/handlers_mode.go's ModeApply)
+    # is the identical mechanism a human clicking through /mode uses --
+    # same form fields, same re-authentication gate (confirm_password),
+    # same session-cookie requirement (auth.DashboardMiddleware). This
+    # can take a live station's database/audio store offline, exactly
+    # like the human-driven path, so it's deliberately not run on every
+    # playbook re-run -- only asserts the mode; if it's already applied,
+    # this just re-confirms the same intent.
+    - name: Apply the install mode
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/mode/apply
+        method: POST
+        body_format: form-urlencoded
+        body:
+          mode: "{{ rivolution_install_mode }}"
+          remote_mysql_host: "{{ rivolution_remote_mysql_host }}"
+          remote_mysql_user: "{{ rivolution_remote_mysql_user }}"
+          remote_mysql_password: "{{ rivolution_remote_mysql_password | default('') }}"
+          remote_mysql_database: "{{ rivolution_remote_mysql_database }}"
+          remote_nfs_host: "{{ rivolution_remote_nfs_host }}"
+          confirm_password: "{{ rivolution_dashboard_secret }}"
+        headers:
+          Cookie: "{{ rivolution_dashboard_login.set_cookie.split(';') | first }}"
+        status_code: [200]
+      no_log: true

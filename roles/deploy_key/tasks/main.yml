@@ -1,17 +1,22 @@
 ---
-# Only runs when rivolution_deploy_key_path is supplied (e.g. by
-# bootstrap.sh, or -e rivolution_deploy_key_path=/path/to/key). Skipped
-# entirely when it's blank -- the default rivolution_git_repo is
-# public, so this is only needed if you've repointed it at your own
-# private fork, or the build user doesn't already have its own git
-# credentials configured some other way.
+# Only relevant under rivolution_install_method: source (the .deb
+# download path never clones anything, so a git deploy key is
+# meaningless there) and only runs when rivolution_deploy_key_path is
+# supplied (e.g. by bootstrap.sh, or
+# -e rivolution_deploy_key_path=/path/to/key). Skipped entirely when
+# it's blank -- the default rivolution_git_repo is public, so this is
+# only needed if you've repointed it at your own private fork, or the
+# install user doesn't already have its own git credentials configured
+# some other way.
 #
 # Takes a file path rather than the key content itself: Ansible's plain
 # key=value extra-vars parsing splits on whitespace (including
 # newlines), which silently truncates a multi-line PEM key passed
 # directly as a value. A file path sidesteps that entirely.
 - name: Set up a dedicated deploy key for the Rivolution repo
-  when: rivolution_deploy_key_path | default("") | length > 0
+  when:
+    - rivolution_install_method == 'source'
+    - rivolution_deploy_key_path | default("") | length > 0
   block:
     - name: Create .ssh directory for the build user
       ansible.builtin.file:

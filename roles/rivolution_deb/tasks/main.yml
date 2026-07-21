@@ -1,0 +1,105 @@
+---
+# Installs Rivolution via a real .deb package either way -- downloaded
+# from GitHub Releases (rivolution_install_method: deb, the default),
+# or the local one roles/build just produced
+# (rivolution_install_method: source). Either way, the actual
+# provisioning (broadcast/PipeWire/rivapi/sudoers/udev/database/etc.)
+# happens inside debian/postinst, unmodified -- this role's only job is
+# getting a .deb file onto the box and telling apt to install it. See
+# docs/specs/0004 for the full reasoning.
+
+- name: Use the locally-built .deb (source install method)
+  ansible.builtin.set_fact:
+    rivolution_deb_path: "{{ rivolution_local_deb_path }}"
+  when: rivolution_install_method == 'source'
+
+- name: Resolve and download a released .deb (deb install method)
+  when: rivolution_install_method == 'deb'
+  block:
+    # Verified 2026-07-20 (gh release view v6.0.0-rc1-2 --json
+    # isDraft,isPrerelease -> both false) that rc-tagged releases here
+    # are not marked GitHub prerelease, so /releases/latest correctly
+    # returns them -- no need for the more defensive "list releases and
+    # filter" approach.
+    - name: Look up the latest published release
+      ansible.builtin.uri:
+        url: https://api.github.com/repos/anjeleno/rivolution/releases/latest
+        return_content: true
+      register: rivolution_latest_release
+      when: rivolution_release_tag | length == 0
+
+    - name: Look up the pinned release
+      ansible.builtin.uri:
+        url: "https://api.github.com/repos/anjeleno/rivolution/releases/tags/{{ rivolution_release_tag }}"
+        return_content: true
+      register: rivolution_pinned_release
+      when: rivolution_release_tag | length > 0
+
+    - name: Record the resolved release tag
+      ansible.builtin.set_fact:
+        rivolution_resolved_tag: >-
+          {{
+            (rivolution_pinned_release.json.tag_name
+             if rivolution_release_tag | length > 0
+             else rivolution_latest_release.json.tag_name)
+          }}
+
+    # amd64 splits further by target Ubuntu release: the primary build
+    # targets 26.04, with a second -noble-suffixed build for 24.04 (see
+    # the main repo's CHANGELOG, 2026-07-03). arm64 has no such split.
+    # Debian isn't handled here at all -- no Debian-built .deb exists
+    # yet (tracked in the main repo's BACKLOG.md); rivolution_install_method:
+    # source is the only way to target Debian today.
+    - name: Determine the release asset name for this host
+      ansible.builtin.set_fact:
+        rivolution_asset_name: >-
+          {%- if ansible_facts['architecture'] == 'aarch64' -%}
+          rivolution_{{ rivolution_resolved_tag[1:] }}_arm64.deb
+          {%- elif ansible_facts['distribution_version'] is version('26.04', '>=') -%}
+          rivolution_{{ rivolution_resolved_tag[1:] }}_amd64.deb
+          {%- else -%}
+          rivolution_{{ rivolution_resolved_tag[1:] }}_amd64-noble.deb
+          {%- endif -%}
+
+    - name: Fail clearly if this host's architecture/OS has no matching release asset
+      ansible.builtin.fail:
+        msg: >-
+          No release asset found for {{ ansible_facts['architecture'] }}/
+          {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}
+          in release {{ rivolution_resolved_tag }} (looked for
+          {{ rivolution_asset_name }}). Debian targets in particular have
+          no .deb release yet -- use -e rivolution_install_method=source
+          instead, or check
+          https://github.com/anjeleno/rivolution/releases/tag/{{ rivolution_resolved_tag }}
+          for what's actually published.
+      when: >-
+        rivolution_asset_name not in
+        ((rivolution_pinned_release.json.assets
+          if rivolution_release_tag | length > 0
+          else rivolution_latest_release.json.assets) | map(attribute='name') | list)
+
+    # GitHub silently renames '~' to '.' in uploaded asset filenames
+    # (the package's own internal version string keeps the '~', which
+    # matters for Debian version ordering -- see the main repo's
+    # ARCHITECTURE.md) -- rivolution_resolved_tag is already the '-'
+    # form (git tags can't contain '~' either), and rivolution_asset_name
+    # above is built without ever using '~', so this already matches
+    # what GitHub actually serves without any extra substitution needed.
+    - name: Download the release asset
+      ansible.builtin.get_url:
+        url: "https://github.com/anjeleno/rivolution/releases/download/{{ rivolution_resolved_tag }}/{{ rivolution_asset_name }}"
+        dest: "/tmp/{{ rivolution_asset_name }}"
+        mode: "0644"
+
+    - name: Record the downloaded .deb's path
+      ansible.builtin.set_fact:
+        rivolution_deb_path: "/tmp/{{ rivolution_asset_name }}"
+
+# Naturally idempotent: apt no-ops if the exact same package version is
+# already installed. postinst does everything else from here --
+# database, systemd units, sudoers, udev, .asoundrc, Apache, setuid
+# helpers, the lot (see debian/postinst in the main repo, or
+# docs/specs/0004's requirements-checklist table for the full list).
+- name: Install the Rivolution .deb
+  ansible.builtin.apt:
+    deb: "{{ rivolution_deb_path }}"
