@@ -72,6 +72,15 @@ RIVOLUTION_HARDEN_LAN_SUBNET=""
 # Set to "true" to install and enable (but not start) tailscaled.
 # Leave RIVOLUTION_TAILSCALE_AUTHKEY blank to activate it yourself
 # later; set it to a real auth key to activate immediately.
+#
+# The key must be an actual Tailscale AUTH KEY, generated from
+# https://login.tailscale.com/admin/settings/keys (Generate auth key) --
+# it always looks like "tskey-auth-<letters/numbers>-<letters/numbers>",
+# starting with the literal prefix "tskey-auth-" (confirmed against
+# Tailscale's own docs, https://tailscale.com/docs/reference/key-prefixes).
+# Paste ONLY that string -- not the full `tailscale up --auth-key=...`
+# command, and without any surrounding quotes. An OAuth client secret
+# (a different page in the admin console) will NOT work here.
 RIVOLUTION_TAILSCALE_ENABLED=""
 RIVOLUTION_TAILSCALE_AUTHKEY=""
 # ----------------------------------------------------------------------

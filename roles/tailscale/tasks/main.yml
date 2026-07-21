@@ -66,9 +66,56 @@
       when: rivolution_tailscale_authkey_path | length > 0
       no_log: true
 
+    # Real Tailscale auth keys are always "tskey-auth-<CNTRL segment>-
+    # <secret segment>", alphanumeric, case-sensitive (confirmed against
+    # Tailscale's own docs, https://tailscale.com/docs/reference/key-prefixes)
+    # -- generated from the admin console's Settings -> Keys -> "Generate
+    # auth key" page, never anything else. Checked *before* attempting
+    # activation so a common paste mistake (grabbing the whole
+    # `tailscale up --auth-key=...` command instead of just the key,
+    # stray surrounding quotes, an OAuth client secret from a different
+    # page, mid-paste whitespace/truncation) fails fast with a specific,
+    # actionable message -- instead of only surfacing as an opaque,
+    # necessarily-no_log'd command failure below.
+    - name: Sanity-check the auth key's format
+      ansible.builtin.assert:
+        that: rivolution_tailscale_authkey is match('^tskey-auth-[A-Za-z0-9]+-[A-Za-z0-9]+$')
+        fail_msg: >-
+          RIVOLUTION_TAILSCALE_AUTHKEY doesn't look like a real Tailscale
+          auth key. It should start with "tskey-auth-" and contain only
+          letters/numbers/hyphens (generated from the admin console:
+          Settings -> Keys -> Generate auth key) -- not the full
+          `tailscale up --auth-key=...` command, and without any
+          surrounding quotes. Fix the value and re-run; nothing else
+          from this run needs to be redone.
+      when: rivolution_tailscale_authkey_path | length > 0
+      no_log: true
+
+    # no_log on this task specifically hides the command line (which
+    # embeds the real key) from ever being logged -- but that also
+    # means Tailscale's own real error text (invalid format, already-
+    # used one-off key, expired, wrong tailnet -- all genuinely
+    # different problems) is unavailable to show here safely. Rather
+    # than guess which one it was, this fails with a generic pointer to
+    # re-run the single command by hand, where the real error is safe
+    # to read directly (nothing Ansible would log or persist).
     - name: Activate Tailscale with the provided auth key
       ansible.builtin.command:
-        cmd: "tailscale up --authkey={{ rivolution_tailscale_authkey }}"
+        cmd: "tailscale up --auth-key={{ rivolution_tailscale_authkey }}"
       when: rivolution_tailscale_authkey_path | length > 0
       no_log: true
       changed_when: true
+      register: rivolution_tailscale_up_result
+      failed_when: false
+
+    - name: Fail clearly if Tailscale activation didn't succeed
+      ansible.builtin.fail:
+        msg: >-
+          `tailscale up --auth-key=...` exited non-zero (format already
+          confirmed valid above, so this is Tailscale itself rejecting
+          it -- commonly an already-used one-off key, an expired key, or
+          the wrong tailnet). Run `sudo tailscale up --auth-key=<your key>`
+          by hand on this box to see the real error text.
+      when:
+        - rivolution_tailscale_authkey_path | length > 0
+        - rivolution_tailscale_up_result.rc != 0

@@ -102,7 +102,7 @@ builds the Ansible role now — `rivolution_tailscale_enabled` (default
 sudoers grant spec 0014 already specifies; `rivolution_tailscale_authkey_path`
 (a file path, same secret-handling pattern as the remote MySQL
 password) optionally activates it immediately
-(`tailscale up --authkey=...`). This is safe to ship ahead of the
+(`tailscale up --auth-key=...`). This is safe to ship ahead of the
 dashboard half — nothing downstream depends on it yet, and it means
 this playbook is ready the moment that page lands instead of needing
 its own follow-up pass. The dashboard Network page itself is out of
