@@ -146,6 +146,7 @@ install_mode="$(choose "Install mode" "standalone" \
   "client")"
 
 build_user="$(ask "Install/build user" "rd")"
+read -r -s -p "Password for $build_user (blank to leave unset -- login only via SSH key or sudo): " build_user_password; echo
 
 remote_mysql_host="" remote_mysql_user="" remote_mysql_database="" remote_mysql_password="" remote_nfs_host=""
 if [ "$install_mode" = "client" ]; then
@@ -190,10 +191,11 @@ extra_vars=(-e "rivolution_install_method=$install_method" -e "rivolution_instal
 [ -n "$remote_nfs_host" ] && extra_vars+=(-e "rivolution_remote_nfs_host=$remote_nfs_host")
 
 
-remote_mysql_password_path="" tailscale_authkey_path=""
+remote_mysql_password_path="" tailscale_authkey_path="" build_user_password_path=""
 cleanup() {
   [ -n "$remote_mysql_password_path" ] && rm -f "$remote_mysql_password_path"
   [ -n "$tailscale_authkey_path" ] && rm -f "$tailscale_authkey_path"
+  [ -n "$build_user_password_path" ] && rm -f "$build_user_password_path"
   return 0
 }
 trap cleanup EXIT
@@ -208,6 +210,12 @@ if [ -n "$tailscale_authkey" ]; then
   chmod 600 "$tailscale_authkey_path"
   printf '%s\n' "$tailscale_authkey" > "$tailscale_authkey_path"
   extra_vars+=(-e "rivolution_tailscale_authkey_path=$tailscale_authkey_path")
+fi
+if [ -n "$build_user_password" ]; then
+  build_user_password_path="$(mktemp)"
+  chmod 600 "$build_user_password_path"
+  printf '%s\n' "$build_user_password" > "$build_user_password_path"
+  extra_vars+=(-e "rivolution_user_password_path=$build_user_password_path")
 fi
 
 if [ "$method" = "ssh" ]; then
@@ -249,6 +257,7 @@ else
     echo "RIVOLUTION_REMOTE_MYSQL_PASSWORD=\"$remote_mysql_password\""
     echo "RIVOLUTION_REMOTE_NFS_HOST=\"$remote_nfs_host\""
     echo "RIVOLUTION_TAILSCALE_AUTHKEY=\"$tailscale_authkey\""
+    echo "RIVOLUTION_USER_PASSWORD=\"$build_user_password\""
     echo
     echo 'apt-get update'
     echo 'apt-get install -y --no-install-recommends git ansible'
@@ -283,6 +292,13 @@ else
     echo '  printf '"'"'%s\n'"'"' "$RIVOLUTION_TAILSCALE_AUTHKEY" > "$tailscale_authkey_path"'
     echo '  cleanup_paths+=("$tailscale_authkey_path")'
     echo '  extra_vars+=(-e "rivolution_tailscale_authkey_path=$tailscale_authkey_path")'
+    echo 'fi'
+    echo 'if [ -n "$RIVOLUTION_USER_PASSWORD" ]; then'
+    echo '  user_password_path="$(mktemp)"'
+    echo '  chmod 600 "$user_password_path"'
+    echo '  printf '"'"'%s\n'"'"' "$RIVOLUTION_USER_PASSWORD" > "$user_password_path"'
+    echo '  cleanup_paths+=("$user_password_path")'
+    echo '  extra_vars+=(-e "rivolution_user_password_path=$user_password_path")'
     echo 'fi'
     echo
     echo 'ansible-galaxy collection install community.general ansible.posix community.mysql'

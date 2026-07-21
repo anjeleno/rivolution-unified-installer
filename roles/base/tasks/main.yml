@@ -32,6 +32,22 @@
     cmd: timedatectl set-ntp yes
   changed_when: false
 
+# Blank when not supplied (the default) -- the user task below then
+# omits `password` entirely, same as before this var existed at all.
+- name: Read the rd account password from its temp file, if provided
+  ansible.builtin.set_fact:
+    rivolution_user_password: "{{ lookup('file', rivolution_user_password_path) }}"
+  when: rivolution_user_password_path | length > 0
+  no_log: true
+
+# update_password: on_create is the load-bearing part -- it's Ansible's
+# own built-in for "set this only when the account is being created,
+# never touch it again on a later run against the same box," which is
+# exactly "new install only, skipped on upgrade" without any custom
+# state-tracking. debian/postinst deliberately does not manage this
+# account's password at all (see its own comment: this package expects
+# the account to already exist) -- account creation already happens
+# here, so the password belongs here too, not duplicated into postinst.
 - name: Create the unprivileged install/desktop user
   ansible.builtin.user:
     name: "{{ rivolution_user }}"
@@ -39,6 +55,9 @@
     append: true
     shell: /bin/bash
     create_home: true
+    password: "{{ (rivolution_user_password | password_hash('sha512')) if rivolution_user_password_path | length > 0 else omit }}"
+    update_password: on_create
+  no_log: "{{ rivolution_user_password_path | length > 0 }}"
 
 # deb-multimedia.org provides the non-free codec packages
 # (libmp3lame-dev/libtwolame-dev/etc.) that Ubuntu ships directly via

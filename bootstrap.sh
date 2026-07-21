@@ -83,6 +83,14 @@ RIVOLUTION_HARDEN_LAN_SUBNET=""
 # (a different page in the admin console) will NOT work here.
 RIVOLUTION_TAILSCALE_ENABLED=""
 RIVOLUTION_TAILSCALE_AUTHKEY=""
+
+# Sets the install/build user's (default "rd", see group_vars/all.yml)
+# login password, but only at account creation time -- never touched
+# on a later run against a box that already has this account. Leave
+# blank to leave the account exactly as before this var existed
+# (locked/no password, login only via SSH key or an already-
+# authenticated sudo session).
+RIVOLUTION_USER_PASSWORD=""
 # ----------------------------------------------------------------------
 
 apt-get update
@@ -145,6 +153,14 @@ if [ -n "$RIVOLUTION_TAILSCALE_AUTHKEY" ]; then
   printf '%s\n' "$RIVOLUTION_TAILSCALE_AUTHKEY" > "$tailscale_authkey_path"
   cleanup_paths+=("$tailscale_authkey_path")
   extra_vars+=(-e "rivolution_tailscale_authkey_path=$tailscale_authkey_path")
+fi
+if [ -n "$RIVOLUTION_USER_PASSWORD" ]; then
+  # Same file-path treatment as the secrets above.
+  user_password_path="$(mktemp)"
+  chmod 600 "$user_password_path"
+  printf '%s\n' "$RIVOLUTION_USER_PASSWORD" > "$user_password_path"
+  cleanup_paths+=("$user_password_path")
+  extra_vars+=(-e "rivolution_user_password_path=$user_password_path")
 fi
 
 ansible-galaxy collection install community.general ansible.posix community.mysql

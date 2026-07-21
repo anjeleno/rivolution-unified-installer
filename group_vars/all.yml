@@ -13,6 +13,19 @@ rivolution_user: rd
 
 rivolution_home: "/home/{{ rivolution_user }}"
 
+# Optional: sets rivolution_user's login password, but only at account
+# creation time (Ansible's update_password: on_create in roles/base) --
+# never touched on a later run against a box that already has this
+# account, so re-running the playbook against an existing install never
+# resets a password someone's since changed. A file path, not the
+# password itself -- same reasoning as rivolution_remote_mysql_password_path
+# below: keeps a real secret out of `ps aux` output and Ansible's own
+# logging, which a direct -e value would end up in. Leave blank to
+# leave the account exactly as before this var existed (locked/no
+# password, login only via SSH key or an already-authenticated sudo
+# session).
+rivolution_user_password_path: ""
+
 # Hostname applied via hostnamectl + /etc/hosts. Override per-host in
 # inventory (host_vars/<host>.yml) when provisioning more than one box
 # via Method 1. For Method 2 (bootstrap.sh/ansible-pull), there's no
