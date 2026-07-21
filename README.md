@@ -30,11 +30,19 @@ path for the source option to fall behind on.
 Tested target: Ubuntu 24.04/26.04 (x64 and arm64), on a DigitalOcean
 Droplet, a UTM VM, and physical hardware.
 
+**Prefer filling in a form over hand-editing a script?**
+[rivolution.dev/configure.html](https://rivolution.dev/configure.html)
+builds the block below for you from a set of fields, live, entirely in
+your own browser -- no network requests, nothing you type (including
+any password/key field) ever leaves the page.
+
 ## Quick start: DigitalOcean Droplet
 
 1. Copy the block below as-is -- by default this installs the latest
    published release of the public `anjeleno/rivolution` repo, so no
-   edits are required to get started.
+   edits are required to get started. Or use
+   [the configurator](https://rivolution.dev/configure.html) above if
+   you'd rather fill in a form.
 2. DigitalOcean Droplet creation screen -> Additional Options -> Startup scripts (Free), paste it in.
 3. Create the Droplet. It boots, installs Ansible, and provisions
    itself automatically -- no SSH in required to kick it off.
