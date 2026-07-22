@@ -105,6 +105,7 @@
       - libltdl-dev
       - make
       - debhelper
+      - golang-go # builds rivapi (debian/rules.src: cd rivapi && go build)
       - qt6-base-dev
       - qt6-base-dev-tools
       - qt6-l10n-tools
