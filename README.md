@@ -290,6 +290,14 @@ Ubuntu/Debian. Method 1, which runs on whatever your separate control
 machine happens to be, does neither of these -- see its prerequisite
 note below.
 
+To skip the "Install Rivolution by..." prompt (e.g. scripting a
+non-interactive local source-method install), pass
+`--install-method=deb` or `--install-method=source` directly:
+
+```bash
+./configure.sh --method=local --install-method=source
+```
+
 ### Method 1: control node pushes to a target over SSH
 
 Requires Ansible already installed on this machine
@@ -339,7 +347,14 @@ ansible-playbook -i "localhost," -c local site.yml
 
 `-c local` runs every task as a direct subprocess instead of opening a
 loopback SSH connection to itself -- no need for this account's own
-SSH key to already be trusted in its own `authorized_keys`.
+SSH key to already be trusted in its own `authorized_keys`. Add
+`-e rivolution_install_method=source` (or any other `group_vars/all.yml`
+override) to the same command to skip the `deb` default without going
+through `configure.sh` at all:
+
+```bash
+ansible-playbook -i "localhost," -c local site.yml -e rivolution_install_method=source
+```
 
 ### Method 3: paste into a Droplet's startup script (no SSH needed)
 

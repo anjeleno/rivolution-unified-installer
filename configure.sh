@@ -19,9 +19,20 @@ SCRIPT_PATH="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
 # non-root invocation) so the re-exec'd, now-root process doesn't ask
 # the same question again.
 preset_method=""
+# Skips the "Install Rivolution by..." prompt below -- e.g. for a
+# non-interactive local source-method install:
+#   ./configure.sh --method=local --install-method=source
+preset_install_method=""
 for arg in "$@"; do
   case "$arg" in
     --method=*) preset_method="${arg#--method=}" ;;
+    --install-method=*)
+      preset_install_method="${arg#--install-method=}"
+      if [ "$preset_install_method" != "deb" ] && [ "$preset_install_method" != "source" ]; then
+        echo "Error: --install-method must be 'deb' or 'source', got '$preset_install_method'" >&2
+        exit 1
+      fi
+      ;;
   esac
 done
 
@@ -95,7 +106,9 @@ fi
 if [ "$method" = "local" ] && [ "$EUID" -ne 0 ]; then
   echo
   echo "Local mode needs root -- re-running this script with sudo (you may be prompted for your password)."
-  exec sudo "$SCRIPT_PATH" --method=local
+  reexec_args=(--method=local)
+  [ -n "$preset_install_method" ] && reexec_args+=(--install-method="$preset_install_method")
+  exec sudo "$SCRIPT_PATH" "${reexec_args[@]}"
 fi
 
 # ssh and local both run ansible-galaxy/ansible-playbook directly
@@ -131,9 +144,13 @@ if [ "$method" != "bootstrap" ]; then
   fi
 fi
 
-install_method="$(choose "Install Rivolution by..." "deb" \
-  "deb" \
-  "source")"
+if [ -n "$preset_install_method" ]; then
+  install_method="$preset_install_method"
+else
+  install_method="$(choose "Install Rivolution by..." "deb" \
+    "deb" \
+    "source")"
+fi
 
 release_tag=""
 if [ "$install_method" = "deb" ]; then
